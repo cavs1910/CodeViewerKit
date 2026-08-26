@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test package
+        run: swift test --configuration release
+
+  ios:
+    name: iOS build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build package
+        run: >-
+          xcodebuild
+          -scheme CodeViewerKit
+          -configuration Release
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
