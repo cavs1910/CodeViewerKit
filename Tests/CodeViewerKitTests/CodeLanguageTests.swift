@@ -3,7 +3,7 @@ import XCTest
 @testable import CodeViewerKit
 
 final class CodeLanguageTests: XCTestCase {
-    func testProvidesPredefinedCustomAndAutomaticLanguages() {
+    func testProvidesCustomAndAutomaticLanguages() {
         XCTAssertEqual(CodeLanguage("swift").identifier, "swift")
         XCTAssertEqual(CodeLanguage("python").identifier, "python")
         XCTAssertEqual(CodeLanguage("elixir").identifier, "elixir")
