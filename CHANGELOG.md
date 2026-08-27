@@ -2,7 +2,7 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
-## Unreleased
+## 0.6.3 - 2026-08-27
 
 - preserve the visible source position when a macOS window resize changes the
   toolbar underlap inset, keeping the first line clear of the toolbar;
