@@ -2,7 +2,7 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
-## Unreleased
+## 0.2.0 - 2026-08-26
 
 - support explicit syntax-highlighting languages, automatic detection, and
   custom bundled Highlight.js language identifiers;

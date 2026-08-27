@@ -41,7 +41,7 @@ Or add the package to `Package.swift`:
 dependencies: [
     .package(
         url: "https://github.com/cavs1910/CodeViewerKit.git",
-        from: "0.1.1"
+        from: "0.2.0"
     )
 ]
 ```
