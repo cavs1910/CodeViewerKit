@@ -11,7 +11,8 @@ viewport-based layout instead of rendering a complete document as one SwiftUI
 
 ## Features
 
-- progressive syntax highlighting for Swift and other languages;
+- native Tree-sitter highlighting for Swift and progressive highlighting for
+  other languages;
 - appearance-aware plain text while highlighting is prepared;
 - logical line numbers that stay aligned when a source line wraps;
 - Menlo with a monospaced system fallback;
@@ -113,7 +114,8 @@ CodeViewer(
 )
 ```
 
-Bundled language identifiers include `"swift"`, `"python"`, `"javascript"`,
+Swift uses a native Tree-sitter parser. Other bundled language identifiers
+include `"python"`, `"javascript"`,
 `"typescript"`, `"json"`, `"html"`, `"css"`, `"bash"`, `"c"`, `"cpp"`,
 `"csharp"`, `"objectivec"`, `"java"`, `"kotlin"`, `"go"`, `"rust"`,
 `"ruby"`, `"php"`, `"sql"`, `"markdown"`, and `"yaml"`. The complete set is
@@ -185,11 +187,15 @@ indexing, gutter geometry, visible marker resolution, and coalesced redraws.
 Small AppKit and UIKit adapters configure the native TextKit 2 views and handle
 the platform-specific selection and scrolling behavior.
 
-Highlighting is provided by
-[HighlightSwift](https://github.com/appstefan/HighlightSwift). The first 80
-logical lines are highlighted with user-initiated priority; the complete
-document finishes at utility priority and is cached by document, contents,
-language, and appearance.
+Swift highlighting is provided by
+[Tree-sitter](https://github.com/tree-sitter/tree-sitter) through
+[SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter). It parses
+the complete document and applies token colors directly to the native
+attributed string without JavaScript or HTML conversion. Other languages use
+[HighlightSwift](https://github.com/appstefan/HighlightSwift): their first 80
+logical lines are prepared with user-initiated priority before the complete
+document finishes at utility priority. Results from both engines are cached by
+document, contents, language, and appearance.
 
 ## Contributing
 
@@ -197,5 +203,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the local build and validation flow.
 
 ## License
 
-CodeViewerKit is available under the Apache License 2.0. HighlightSwift is an
-MIT-licensed package dependency; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+CodeViewerKit is available under the Apache License 2.0. Dependency licenses
+are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -15,6 +15,14 @@ let package = Package(
         .package(
             url: "https://github.com/appstefan/HighlightSwift.git",
             from: "1.1.0"
+        ),
+        .package(
+            url: "https://github.com/tree-sitter/swift-tree-sitter.git",
+            from: "0.25.0"
+        ),
+        .package(
+            url: "https://github.com/alex-pinkus/tree-sitter-swift.git",
+            revision: "31d17fe7e818a2048c808b5c6fdc2dc792f4f5b5"
         )
     ],
     targets: [
@@ -24,6 +32,14 @@ let package = Package(
                 .product(
                     name: "HighlightSwift",
                     package: "HighlightSwift"
+                ),
+                .product(
+                    name: "SwiftTreeSitter",
+                    package: "swift-tree-sitter"
+                ),
+                .product(
+                    name: "TreeSitterSwift",
+                    package: "tree-sitter-swift"
                 )
             ]
         ),

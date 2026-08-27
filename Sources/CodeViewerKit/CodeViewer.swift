@@ -2,10 +2,10 @@ import SwiftUI
 
 /// A read-only source-code viewer backed by TextKit 2.
 ///
-/// `CodeViewer` provides progressive syntax highlighting, logical line
-/// numbers, selection, native scrolling, and viewport-based layout on iOS,
-/// iPadOS, and macOS. The view does not provide its own background or outer
-/// decoration, so it can be embedded in the container that fits your app.
+/// `CodeViewer` provides syntax highlighting, logical line numbers, selection,
+/// native scrolling, and viewport-based layout on iOS, iPadOS, and macOS. The
+/// view does not provide its own background or outer decoration, so it can be
+/// embedded in the container that fits your app.
 public struct CodeViewer: View {
     private struct HighlightRequest: Hashable {
         let documentID: String

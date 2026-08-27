@@ -2,6 +2,12 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## Unreleased
+
+- use native Tree-sitter parsing and direct attributed-string styling for
+  complete Swift documents while retaining HighlightSwift as the progressive
+  fallback for other languages;
+
 ## 0.4.2 - 2026-08-27
 
 - resolve the complete macOS toolbar overlap when the native view joins its

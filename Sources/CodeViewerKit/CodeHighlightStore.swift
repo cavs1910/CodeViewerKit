@@ -1,34 +1,21 @@
-import HighlightSwift
 import Observation
 import SwiftUI
 
-/// A session-scoped cache for progressively highlighted source code.
+/// A session-scoped cache for highlighted source code.
 ///
 /// Create one store at a stable ownership boundary and pass it to each
 /// ``CodeViewer`` that should share prepared documents. Replacing the store
 /// releases the cached source and highlighting results.
 @Observable @MainActor
 public final class CodeHighlightStore {
-    private enum Appearance: Hashable, Sendable {
-        case light
-        case dark
-
-        var colors: HighlightColors {
-            switch self {
-            case .light: .light(.xcode)
-            case .dark: .dark(.xcode)
-            }
-        }
-    }
-
     private struct Key: Hashable, Sendable {
         let documentID: String
         let sourceCode: String
         let language: CodeLanguage
-        let appearance: Appearance
+        let appearance: CodeHighlightAppearance
     }
 
-    private let highlighter = Highlight()
+    private let highlighter = CodeSyntaxHighlighter()
     private var snippets = [Key: AttributedString]()
     private var completedKeys = Set<Key>()
     private var preparationTasks = [Key: Task<AttributedString, Never>]()
@@ -71,11 +58,12 @@ public final class CodeHighlightStore {
         )
     }
 
-    /// Progressively prepares highlighting for a source document.
+    /// Prepares highlighting for a source document.
     ///
-    /// The first 80 logical lines are prepared with user-initiated priority.
-    /// The complete document then finishes at utility priority. Calling this
-    /// method again with the same inputs reuses the existing result or task.
+    /// Swift is prepared as a complete document with native Tree-sitter.
+    /// Other languages use HighlightSwift, preparing the first 80 logical
+    /// lines before completing the document. Calling this method again with
+    /// the same inputs reuses the existing result or task.
     public func prepare(
         documentID: String,
         sourceCode: String,
@@ -92,6 +80,39 @@ public final class CodeHighlightStore {
 
         let highlighter = highlighter
 
+        if CodeSyntaxHighlighter.highlightsWholeDocumentImmediately(
+            language: key.language
+        ) {
+            let task: Task<AttributedString, Never>
+            if let existingTask = preparationTasks[key] {
+                task = existingTask
+            } else {
+                task = Task.detached(priority: .userInitiated) {
+                    await highlighter.attributedText(
+                        sourceCode,
+                        language: key.language,
+                        appearance: key.appearance
+                    ) ?? AttributedString(sourceCode)
+                }
+                preparationTasks[key] = task
+            }
+
+            let highlightedText = await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            guard !Task.isCancelled else {
+                preparationTasks[key] = nil
+                return
+            }
+
+            snippets[key] = highlightedText
+            completedKeys.insert(key)
+            preparationTasks[key] = nil
+            return
+        }
+
         if snippets[key] == nil {
             let (leadingSource, remainingSource) = ProgressiveCodeHighlight
                 .splitLeadingLines(sourceCode)
@@ -99,7 +120,7 @@ public final class CodeHighlightStore {
                 await highlightSource(
                     leadingSource,
                     language: key.language,
-                    colors: key.appearance.colors,
+                    appearance: key.appearance,
                     using: highlighter
                 )
             }.value
@@ -119,7 +140,7 @@ public final class CodeHighlightStore {
                 await highlightSource(
                     sourceCode,
                     language: key.language,
-                    colors: key.appearance.colors,
+                    appearance: key.appearance,
                     using: highlighter
                 ) ?? AttributedString(sourceCode)
             }
@@ -159,19 +180,12 @@ public final class CodeHighlightStore {
 private func highlightSource(
     _ sourceCode: String,
     language: CodeLanguage,
-    colors: HighlightColors,
-    using highlighter: Highlight
+    appearance: CodeHighlightAppearance,
+    using highlighter: CodeSyntaxHighlighter
 ) async -> AttributedString? {
-    if let identifier = language.identifier {
-        return try? await highlighter.attributedText(
-            sourceCode,
-            language: identifier,
-            colors: colors
-        )
-    }
-
-    return try? await highlighter.attributedText(
+    return await highlighter.attributedText(
         sourceCode,
-        colors: colors
+        language: language,
+        appearance: appearance
     )
 }
