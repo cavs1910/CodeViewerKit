@@ -59,17 +59,15 @@ public struct CodeViewer: View {
     public var body: some View {
         CodeTextView(
             documentID: documentID,
-            text: CodePlainTextStyle.apply(
-                to: highlightStore.displayedCode(
-                    documentID: documentID,
-                    sourceCode: sourceCode,
-                    language: language,
-                    colorScheme: colorScheme
-                ),
-                color: CodePlainTextStyle.resolve(
-                    configuredColor: plainTextColor,
-                    colorScheme: colorScheme
-                )
+            text: highlightStore.displayedCode(
+                documentID: documentID,
+                sourceCode: sourceCode,
+                language: language,
+                colorScheme: colorScheme
+            ),
+            plainTextColor: CodePlainTextStyle.resolve(
+                configuredColor: plainTextColor,
+                colorScheme: colorScheme
             ),
             prewarmsLayout: highlightStore.isPrepared(
                 documentID: documentID,
@@ -105,16 +103,5 @@ enum CodePlainTextStyle {
         colorScheme: ColorScheme
     ) -> Color {
         configuredColor ?? (colorScheme == .dark ? .white : .black)
-    }
-
-    static func apply(
-        to text: AttributedString,
-        color: Color
-    ) -> AttributedString {
-        var result = text
-        var fallbackAttributes = AttributeContainer()
-        fallbackAttributes.foregroundColor = color
-        result.mergeAttributes(fallbackAttributes, mergePolicy: .keepCurrent)
-        return result
     }
 }

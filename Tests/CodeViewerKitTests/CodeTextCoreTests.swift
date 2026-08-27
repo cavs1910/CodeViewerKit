@@ -2,31 +2,68 @@ import SwiftUI
 import XCTest
 @testable import CodeViewerKit
 
+#if os(macOS)
+import AppKit
+#endif
+
 final class CodeTextCoreTests: XCTestCase {
     func testDocumentStateClassifiesUpdatesAndNewDocuments() throws {
         var state = CodeTextDocumentState()
         let text = AttributedString("first\nsecond")
 
         let initialChange = try XCTUnwrap(
-            state.change(documentID: "first", text: text, fontSize: 12)
+            state.change(
+                documentID: "first",
+                text: text,
+                plainTextColor: .white,
+                fontSize: 12
+            )
         )
         XCTAssertTrue(initialChange.isNewDocument)
 
         state.apply(
             documentID: "first",
             text: text,
+            plainTextColor: .white,
             fontSize: 12,
             plainText: "first\nsecond"
         )
-        XCTAssertNil(state.change(documentID: "first", text: text, fontSize: 12))
+        XCTAssertNil(
+            state.change(
+                documentID: "first",
+                text: text,
+                plainTextColor: .white,
+                fontSize: 12
+            )
+        )
         XCTAssertFalse(
             try XCTUnwrap(
-                state.change(documentID: "first", text: text, fontSize: 13)
+                state.change(
+                    documentID: "first",
+                    text: text,
+                    plainTextColor: .white,
+                    fontSize: 13
+                )
+            ).isNewDocument
+        )
+        XCTAssertFalse(
+            try XCTUnwrap(
+                state.change(
+                    documentID: "first",
+                    text: text,
+                    plainTextColor: .black,
+                    fontSize: 12
+                )
             ).isNewDocument
         )
         XCTAssertTrue(
             try XCTUnwrap(
-                state.change(documentID: "second", text: text, fontSize: 12)
+                state.change(
+                    documentID: "second",
+                    text: text,
+                    plainTextColor: .white,
+                    fontSize: 12
+                )
             ).isNewDocument
         )
     }
@@ -37,6 +74,7 @@ final class CodeTextCoreTests: XCTestCase {
         state.apply(
             documentID: "sample",
             text: AttributedString("first\nsecond\n"),
+            plainTextColor: .white,
             fontSize: 12,
             plainText: "first\nsecond\n"
         )
@@ -76,16 +114,30 @@ final class CodeTextCoreTests: XCTestCase {
         )
     }
 
-    func testPlainTextStyleDoesNotReplaceSyntaxColors() {
-        var text = AttributedString("plain highlighted")
-        let highlightedRange = text.range(of: "highlighted")!
-        text[highlightedRange].foregroundColor = .red
+    func testNativePlainTextFallbackUsesTextKitColorAndPreservesSyntaxColors() {
+        #if os(macOS)
+        let text = NSMutableAttributedString(string: "plain highlighted")
+        let highlightedRange = (text.string as NSString).range(of: "highlighted")
+        text.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemRed,
+            range: highlightedRange
+        )
 
-        let styled = CodePlainTextStyle.apply(to: text, color: .white)
-        let runs = Array(styled.runs)
+        CodeNativeTextColor.applyFallback(.white, to: text)
 
-        XCTAssertEqual(runs.count, 2)
-        XCTAssertEqual(runs[0].foregroundColor, .white)
-        XCTAssertEqual(runs[1].foregroundColor, .red)
+        XCTAssertEqual(
+            text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor,
+            NSColor(Color.white)
+        )
+        XCTAssertEqual(
+            text.attribute(
+                .foregroundColor,
+                at: highlightedRange.location,
+                effectiveRange: nil
+            ) as? NSColor,
+            .systemRed
+        )
+        #endif
     }
 }

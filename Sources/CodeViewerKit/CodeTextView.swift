@@ -20,6 +20,7 @@ struct CodeTextView: View {
 
     let documentID: String
     let text: AttributedString
+    let plainTextColor: Color
     let prewarmsLayout: Bool
     let scrollIndicatorInsets: EdgeInsets
 
@@ -30,6 +31,7 @@ struct CodeTextView: View {
             request: CodeTextRenderRequest(
                 documentID: documentID,
                 text: text,
+                plainTextColor: plainTextColor,
                 fontSize: fontSize,
                 prewarmsLayout: prewarmsLayout,
                 scrollIndicatorInsets: scrollIndicatorInsets
@@ -97,6 +99,7 @@ public struct CodeViewerCommands: Commands {
 private struct CodeTextRenderRequest {
     let documentID: String
     let text: AttributedString
+    let plainTextColor: Color
     let fontSize: CGFloat
     let prewarmsLayout: Bool
     let scrollIndicatorInsets: EdgeInsets
@@ -120,16 +123,19 @@ struct CodeTextDocumentChange: Equatable {
 struct CodeTextDocumentState {
     private(set) var documentID: String?
     private(set) var content: AttributedString?
+    private(set) var plainTextColor: Color?
     private(set) var fontSize: CGFloat?
     private(set) var lineIndex = CodeLineIndex(text: "")
 
     func change(
         documentID: String,
         text: AttributedString,
+        plainTextColor: Color,
         fontSize: CGFloat
     ) -> CodeTextDocumentChange? {
         guard self.documentID != documentID
                 || content != text
+                || self.plainTextColor != plainTextColor
                 || self.fontSize != fontSize
         else { return nil }
         return CodeTextDocumentChange(isNewDocument: self.documentID != documentID)
@@ -138,11 +144,13 @@ struct CodeTextDocumentState {
     mutating func apply(
         documentID: String,
         text: AttributedString,
+        plainTextColor: Color,
         fontSize: CGFloat,
         plainText: String
     ) {
         self.documentID = documentID
         content = text
+        self.plainTextColor = plainTextColor
         self.fontSize = fontSize
         lineIndex = CodeLineIndex(text: plainText)
     }
@@ -271,7 +279,8 @@ private enum CodeTextStyle {
 
     static func attributedText(
         _ text: AttributedString,
-        font: CodePlatformFont
+        font: CodePlatformFont,
+        plainTextColor: Color
     ) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: NSAttributedString(text))
         result.addAttribute(
@@ -279,7 +288,33 @@ private enum CodeTextStyle {
             value: font,
             range: NSRange(location: 0, length: result.length)
         )
+        CodeNativeTextColor.applyFallback(plainTextColor, to: result)
         return result
+    }
+}
+
+/// Applies the fallback through TextKit's native attribute scope. A SwiftUI
+/// `Color` stored directly in `AttributedString` bridges as
+/// `SwiftUI.ForegroundColor`, which `NSTextView` and `UITextView` ignore.
+enum CodeNativeTextColor {
+    static func applyFallback(
+        _ color: Color,
+        to text: NSMutableAttributedString
+    ) {
+        let fullRange = NSRange(location: 0, length: text.length)
+        guard fullRange.length > 0 else { return }
+
+        var rangesWithoutColor: [NSRange] = []
+        text.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+            if value == nil {
+                rangesWithoutColor.append(range)
+            }
+        }
+
+        let platformColor = CodePlatformColor(color)
+        for range in rangesWithoutColor {
+            text.addAttribute(.foregroundColor, value: platformColor, range: range)
+        }
     }
 }
 
@@ -297,14 +332,20 @@ private extension CodeTextDocumentState {
         guard let change = change(
             documentID: request.documentID,
             text: request.text,
+            plainTextColor: request.plainTextColor,
             fontSize: request.fontSize
         ) else { return nil }
 
         let font = CodeTextStyle.font(ofSize: request.fontSize)
-        let attributedText = CodeTextStyle.attributedText(request.text, font: font)
+        let attributedText = CodeTextStyle.attributedText(
+            request.text,
+            font: font,
+            plainTextColor: request.plainTextColor
+        )
         apply(
             documentID: request.documentID,
             text: request.text,
+            plainTextColor: request.plainTextColor,
             fontSize: request.fontSize,
             plainText: attributedText.string
         )
