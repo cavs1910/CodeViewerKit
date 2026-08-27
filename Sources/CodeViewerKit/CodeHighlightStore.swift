@@ -15,13 +15,15 @@ public final class CodeHighlightStore {
         let appearance: CodeHighlightAppearance
     }
 
-    private let highlighter = CodeSyntaxHighlighter()
+    private let highlighter: CodeSyntaxHighlighter
     private var snippets = [Key: AttributedString]()
     private var completedKeys = Set<Key>()
     private var preparationTasks = [Key: Task<AttributedString, Never>]()
 
-    /// Creates an empty highlighting cache.
-    public init() {}
+    /// Creates an empty highlighting cache using the linked grammars.
+    public init(grammars: [CodeGrammar]) {
+        highlighter = CodeSyntaxHighlighter(grammars: grammars)
+    }
 
     func displayedCode(
         documentID: String,

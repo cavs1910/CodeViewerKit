@@ -15,7 +15,7 @@ final class CodeLanguageTests: XCTestCase {
 
     @MainActor
     func testHighlightCacheSeparatesLanguages() async {
-        let store = CodeHighlightStore()
+        let store = CodeHighlightStore(grammars: allTestGrammars)
         let source = "let value = 1"
 
         await store.prepare(

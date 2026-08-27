@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class PublicAPICompilationTests: XCTestCase {
     func testPublicViewerSurfaceCanBeConstructed() {
-        let highlights = CodeHighlightStore()
+        let highlights = CodeHighlightStore(grammars: allTestGrammars)
 
         _ = CodeViewer(
             documentID: "example",

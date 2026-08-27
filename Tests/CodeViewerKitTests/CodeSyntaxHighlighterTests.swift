@@ -34,7 +34,7 @@ final class CodeSyntaxHighlighterTests: XCTestCase {
             (.typeScript, "const value: string = \"Hello\";"),
             (.yaml, "enabled: true")
         ]
-        let highlighter = CodeSyntaxHighlighter()
+        let highlighter = CodeSyntaxHighlighter(grammars: allTestGrammars)
 
         for (language, source) in samples {
             let highlighted = await highlighter.attributedText(
@@ -66,7 +66,7 @@ final class CodeSyntaxHighlighterTests: XCTestCase {
 
     func testAutomaticLanguageDetectionUsesTreeSitter() async throws {
         let source = "{\"enabled\": true}"
-        let highlighter = CodeSyntaxHighlighter()
+        let highlighter = CodeSyntaxHighlighter(grammars: allTestGrammars)
         let highlighted = await highlighter.attributedText(
             source,
             language: .automatic,
@@ -87,7 +87,7 @@ final class CodeSyntaxHighlighterTests: XCTestCase {
 
     func testUnknownLanguageReturnsPlainTextWithoutAnotherEngine() async throws {
         let source = "some custom syntax"
-        let highlighter = CodeSyntaxHighlighter()
+        let highlighter = CodeSyntaxHighlighter(grammars: allTestGrammars)
         let highlighted = await highlighter.attributedText(
             source,
             language: "unknown-language",

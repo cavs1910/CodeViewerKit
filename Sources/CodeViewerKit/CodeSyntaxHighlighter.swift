@@ -1,43 +1,5 @@
 import Foundation
 import SwiftTreeSitter
-import TreeSitterBash
-import TreeSitterBashQueries
-import TreeSitterC
-import TreeSitterCQueries
-import TreeSitterCPP
-import TreeSitterCPPQueries
-import TreeSitterCSharp
-import TreeSitterCSharpQueries
-import TreeSitterCSS
-import TreeSitterCSSQueries
-import TreeSitterGo
-import TreeSitterGoQueries
-import TreeSitterHTML
-import TreeSitterHTMLQueries
-import TreeSitterJava
-import TreeSitterJavaQueries
-import TreeSitterJavaScript
-import TreeSitterJavaScriptQueries
-import TreeSitterJSON
-import TreeSitterJSONQueries
-import TreeSitterMarkdown
-import TreeSitterMarkdownQueries
-import TreeSitterPHP
-import TreeSitterPHPQueries
-import TreeSitterPython
-import TreeSitterPythonQueries
-import TreeSitterRuby
-import TreeSitterRubyQueries
-import TreeSitterRust
-import TreeSitterRustQueries
-import TreeSitterSQL
-import TreeSitterSQLQueries
-import TreeSitterSwift
-import TreeSitterSwiftQueries
-import TreeSitterTypeScript
-import TreeSitterTypeScriptQueries
-import TreeSitterYAML
-import TreeSitterYAMLQueries
 
 #if os(macOS)
 import AppKit
@@ -53,8 +15,22 @@ enum CodeHighlightAppearance: Hashable, Sendable {
 }
 
 actor CodeSyntaxHighlighter {
+    private let specifications: [String: TreeSitterLanguageSpecification]
     private var highlighters = [String: TreeSitterCodeHighlighter]()
     private var failedLanguages = Set<String>()
+
+    init(grammars: [CodeGrammar]) {
+        specifications = grammars.reduce(into: [:]) { result, grammar in
+            let specification = TreeSitterLanguageSpecification(
+                identifier: grammar.identifier,
+                language: grammar.language,
+                queryURLs: grammar.queryURLs
+            )
+            for identifier in [grammar.identifier] + grammar.aliases {
+                result[Self.normalized(identifier)] = specification
+            }
+        }
+    }
 
     func attributedText(
         _ sourceCode: String,
@@ -62,9 +38,7 @@ actor CodeSyntaxHighlighter {
         appearance: CodeHighlightAppearance
     ) -> AttributedString? {
         let identifier = language.resolvedIdentifier(for: sourceCode)
-        guard let specification = TreeSitterLanguageRegistry.specification(
-            for: identifier
-        ) else {
+        guard let specification = specifications[Self.normalized(identifier)] else {
             return AttributedString(sourceCode)
         }
         guard let highlighter = preparedHighlighter(for: specification) else {
@@ -96,6 +70,10 @@ actor CodeSyntaxHighlighter {
             failedLanguages.insert(specification.identifier)
             return nil
         }
+    }
+
+    private static func normalized(_ identifier: String) -> String {
+        identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 
@@ -156,83 +134,6 @@ struct TreeSitterLanguageSpecification {
     let identifier: String
     let language: OpaquePointer
     let queryURLs: [URL]
-}
-
-private enum TreeSitterLanguageRegistry {
-    static func specification(
-        for identifier: String
-    ) -> TreeSitterLanguageSpecification? {
-        switch normalized(identifier) {
-        case "bash", "shell", "sh", "zsh":
-            specification("bash", tree_sitter_bash(), TreeSitterBashQueries.Query.highlightsFileURL)
-        case "c":
-            specification("c", tree_sitter_c(), TreeSitterCQueries.Query.highlightsFileURL)
-        case "cpp", "c++", "cc", "cxx":
-            specification(
-                "cpp", tree_sitter_cpp(),
-                TreeSitterCQueries.Query.highlightsFileURL,
-                TreeSitterCPPQueries.Query.highlightsFileURL
-            )
-        case "csharp", "c#", "cs":
-            specification("csharp", tree_sitter_c_sharp(), TreeSitterCSharpQueries.Query.highlightsFileURL)
-        case "css":
-            specification("css", tree_sitter_css(), TreeSitterCSSQueries.Query.highlightsFileURL)
-        case "go", "golang":
-            specification("go", tree_sitter_go(), TreeSitterGoQueries.Query.highlightsFileURL)
-        case "html", "htm":
-            specification("html", tree_sitter_html(), TreeSitterHTMLQueries.Query.highlightsFileURL)
-        case "java":
-            specification("java", tree_sitter_java(), TreeSitterJavaQueries.Query.highlightsFileURL)
-        case "javascript", "js", "jsx", "mjs", "cjs":
-            specification("javascript", tree_sitter_javascript(), TreeSitterJavaScriptQueries.Query.highlightsFileURL)
-        case "json":
-            specification("json", tree_sitter_json(), TreeSitterJSONQueries.Query.highlightsFileURL)
-        case "kotlin", "kt", "kts":
-            specification("kotlin", tree_sitter_java(), TreeSitterJavaQueries.Query.highlightsFileURL)
-        case "markdown", "md":
-            specification("markdown", tree_sitter_markdown(), TreeSitterMarkdownQueries.Query.highlightsFileURL)
-        case "objectivec", "objective-c", "objc", "m", "mm":
-            specification("objectivec", tree_sitter_c(), TreeSitterCQueries.Query.highlightsFileURL)
-        case "php":
-            specification("php", tree_sitter_php(), TreeSitterPHPQueries.Query.highlightsFileURL)
-        case "python", "py":
-            specification("python", tree_sitter_python(), TreeSitterPythonQueries.Query.highlightsFileURL)
-        case "ruby", "rb":
-            specification("ruby", tree_sitter_ruby(), TreeSitterRubyQueries.Query.highlightsFileURL)
-        case "rust", "rs":
-            specification("rust", tree_sitter_rust(), TreeSitterRustQueries.Query.highlightsFileURL)
-        case "sql":
-            specification("sql", tree_sitter_sql(), TreeSitterSQLQueries.Query.highlightsFileURL)
-        case "swift":
-            specification("swift", tree_sitter_swift(), TreeSitterSwiftQueries.Query.highlightsFileURL)
-        case "typescript", "ts":
-            specification(
-                "typescript", tree_sitter_typescript(),
-                TreeSitterJavaScriptQueries.Query.highlightsFileURL,
-                TreeSitterTypeScriptQueries.Query.highlightsFileURL
-            )
-        case "yaml", "yml":
-            specification("yaml", tree_sitter_yaml(), TreeSitterYAMLQueries.Query.highlightsFileURL)
-        default:
-            nil
-        }
-    }
-
-    private static func specification(
-        _ identifier: String,
-        _ language: OpaquePointer,
-        _ queryURLs: URL...
-    ) -> TreeSitterLanguageSpecification {
-        TreeSitterLanguageSpecification(
-            identifier: identifier,
-            language: language,
-            queryURLs: queryURLs
-        )
-    }
-
-    private static func normalized(_ identifier: String) -> String {
-        identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
 }
 
 private extension Array where Element == Data {

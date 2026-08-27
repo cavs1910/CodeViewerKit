@@ -41,12 +41,14 @@ Or add the package to `Package.swift`:
 dependencies: [
     .package(
         url: "https://github.com/cavs1910/CodeViewerKit.git",
-        from: "0.4.0"
+        from: "0.6.0"
     )
 ]
 ```
 
-Then add `CodeViewerKit` to the dependencies of your app target.
+Add `CodeViewerKit` and only the language products your app needs to its target.
+For example, a Swift and JSON viewer uses `CodeViewerKitLanguageSwift` and
+`CodeViewerKitLanguageJSON`; unselected grammars are not linked into the app.
 
 ## Usage
 
@@ -55,10 +57,11 @@ prepared documents survive navigation and avoids repeating highlighting work.
 
 ```swift
 import CodeViewerKit
+import CodeViewerKitLanguageSwift
 import SwiftUI
 
 struct ContentView: View {
-    @State private var highlights = CodeHighlightStore()
+    @State private var highlights = CodeHighlightStore(grammars: [.swift])
 
     private let source = """
     import SwiftUI
@@ -86,9 +89,24 @@ showing a different document so the viewer starts at the beginning.
 
 ### Languages
 
-Swift is the default. Pass an explicit supported Tree-sitter language in
-quotes, or use `.automatic` without quotes to detect a language from the
-source contents:
+Every grammar is opt-in at compile time. Import each selected language product
+and provide its grammar when creating the shared store:
+
+```swift
+import CodeViewerKit
+import CodeViewerKitLanguageJavaScript
+import CodeViewerKitLanguageJSON
+import CodeViewerKitLanguagePython
+import CodeViewerKitLanguageSwift
+import CodeViewerKitLanguageTypeScript
+
+let highlights = CodeHighlightStore(
+    grammars: [.swift, .json, .javaScript, .typeScript, .python]
+)
+```
+
+Pass an explicit linked Tree-sitter language in quotes, or use `.automatic`
+without quotes to detect a language from the source contents:
 
 ```swift
 CodeViewer(
@@ -113,13 +131,13 @@ CodeViewer(
 )
 ```
 
-Supported language identifiers include `"swift"`, `"python"`, `"javascript"`,
+Available language products cover `"swift"`, `"python"`, `"javascript"`,
 `"typescript"`, `"json"`, `"html"`, `"css"`, `"bash"`, `"c"`, `"cpp"`,
 `"csharp"`, `"objectivec"`, `"java"`, `"kotlin"`, `"go"`, `"rust"`,
 `"ruby"`, `"php"`, `"shell"`, `"sql"`, `"markdown"`, and `"yaml"`.
 Common aliases such as `"js"`, `"ts"`, `"py"`, `"rb"`, `"sh"`, and `"yml"`
-are also accepted. Unknown identifiers render as plain text without loading a
-second highlighting engine.
+are also accepted when their corresponding grammar is selected. Unknown or
+unlinked identifiers render as plain text without loading a second engine.
 
 Prefer an explicit language when it is known. Automatic detection performs
 additional work and can be ambiguous for short snippets.
@@ -189,8 +207,10 @@ the platform-specific selection and scrolling behavior.
 Highlighting is provided by
 [Tree-sitter](https://github.com/tree-sitter/tree-sitter) through
 [SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter) and the
-offline grammars in
-[TreeSitterLanguages](https://github.com/simonbs/TreeSitterLanguages). The
+individually selectable offline grammars in
+[TreeSitterLanguages](https://github.com/simonbs/TreeSitterLanguages). Each
+language is exposed as a separate SwiftPM product, so consumers link only the
+grammars passed to `CodeHighlightStore`. The
 complete document is parsed away from the main actor and token colors are
 applied directly to the native attributed string without JavaScript or HTML
 conversion. Results are cached by document, contents, language, and appearance.
