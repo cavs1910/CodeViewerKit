@@ -99,6 +99,21 @@ final class CodeTextCoreTests: XCTestCase {
         XCTAssertEqual(frames.text, CGRect(x: 24, y: 0, width: 76, height: 80))
     }
 
+    #if os(macOS)
+    func testInitialMacScrollPositionAccountsForContentInsets() {
+        let origin = MacCodeScrollPosition.leadingOrigin(
+            contentInsets: NSEdgeInsets(
+                top: 52,
+                left: 8,
+                bottom: 4,
+                right: 12
+            )
+        )
+
+        XCTAssertEqual(origin, CGPoint(x: 0, y: -52))
+    }
+    #endif
+
     func testPlainTextStyleUsesAnAppearanceAwareDefault() {
         XCTAssertEqual(
             CodePlainTextStyle.resolve(configuredColor: nil, colorScheme: .light),

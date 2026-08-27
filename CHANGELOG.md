@@ -2,6 +2,11 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## 0.4.1 - 2026-08-27
+
+- account for automatic macOS toolbar content insets when positioning a new
+  document at the beginning of its native scroll view.
+
 ## 0.3.0 - 2026-08-27
 
 - use native text-container padding and scroll indicators on iOS and iPadOS;

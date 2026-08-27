@@ -347,6 +347,12 @@ private extension CodeTextDocumentState {
 
 #if os(macOS)
 
+enum MacCodeScrollPosition {
+    static func leadingOrigin(contentInsets: NSEdgeInsets) -> CGPoint {
+        CGPoint(x: 0, y: -contentInsets.top)
+    }
+}
+
 private struct PlatformCodeTextView: NSViewRepresentable {
     static let defaultFontSize = NSFont.systemFontSize(for: .small)
 
@@ -458,7 +464,9 @@ private final class MacCodeTextContainer: NSView {
 
         layoutSubtreeIfNeeded()
         let destination = update.change.isNewDocument
-            ? CGPoint.zero
+            ? MacCodeScrollPosition.leadingOrigin(
+                contentInsets: scrollView.contentInsets
+            )
             : visibleOrigin
         scrollView.contentView.scroll(to: destination)
         scrollView.reflectScrolledClipView(scrollView.contentView)
