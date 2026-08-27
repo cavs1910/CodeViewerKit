@@ -116,7 +116,7 @@ CodeViewer(
 Predefined values include Swift, Python, JavaScript, TypeScript, JSON, HTML,
 CSS, Bash, C, C++, C#, Objective-C, Java, Kotlin, Go, Rust, Ruby, PHP, SQL,
 Markdown, and YAML. The complete set of bundled identifiers is documented by
-[HighlightSwift](https://github.com/appstefan/HighlightSwift/blob/1.1.0/Sources/HighlightSwift/Highlight/HighlightLanguage.swift).
+[HighlightSwift](https://github.com/appstefan/HighlightSwift/blob/v1.1.0/Sources/HighlightSwift/Highlight/HighlightLanguage.swift).
 
 Prefer an explicit language when it is known. Automatic detection performs
 additional work and can be ambiguous for short snippets.
