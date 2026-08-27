@@ -12,6 +12,7 @@ final class PublicAPICompilationTests: XCTestCase {
             sourceCode: "import SwiftUI",
             highlightStore: highlights,
             language: .python,
+            lineWrapping: .word,
             plainTextColor: .orange
         )
         _ = CodeViewerCommands()

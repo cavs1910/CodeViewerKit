@@ -19,6 +19,7 @@ struct CodeTextView: View {
     let documentID: String
     let text: AttributedString
     let plainTextColor: Color
+    let lineWrapping: CodeLineWrapping
     let prewarmsLayout: Bool
 
     @State private var fontSize = PlatformCodeTextView.defaultFontSize
@@ -30,6 +31,7 @@ struct CodeTextView: View {
                 text: text,
                 plainTextColor: plainTextColor,
                 fontSize: fontSize,
+                lineWrapping: lineWrapping,
                 prewarmsLayout: prewarmsLayout
             )
         )
@@ -97,6 +99,7 @@ private struct CodeTextRenderRequest {
     let text: AttributedString
     let plainTextColor: Color
     let fontSize: CGFloat
+    let lineWrapping: CodeLineWrapping
     let prewarmsLayout: Bool
 }
 
@@ -365,6 +368,7 @@ private final class MacCodeTextContainer: NSView {
     private let textView: NSTextView
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
+    private var lineWrapping: CodeLineWrapping?
 
     override var isFlipped: Bool { true }
 
@@ -382,6 +386,7 @@ private final class MacCodeTextContainer: NSView {
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .legacy
         scrollView.documentView = textView
 
@@ -392,14 +397,7 @@ private final class MacCodeTextContainer: NSView {
         textView.usesInspectorBar = false
         textView.usesRuler = false
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = true
-        textView.autoresizingMask.remove(.width)
         textView.maxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-        textView.textContainer?.widthTracksTextView = false
-        textView.textContainer?.containerSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
@@ -438,6 +436,8 @@ private final class MacCodeTextContainer: NSView {
     }
 
     func update(_ request: CodeTextRenderRequest) {
+        updateLineWrapping(request.lineWrapping)
+
         guard let update = documentState.prepareUpdate(for: request) else {
             scheduleGutterUpdate()
             return
@@ -463,6 +463,32 @@ private final class MacCodeTextContainer: NSView {
         scrollView.contentView.scroll(to: destination)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         scheduleGutterUpdate()
+    }
+
+    private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {
+        guard self.lineWrapping != lineWrapping,
+              let textContainer = textView.textContainer
+        else { return }
+
+        self.lineWrapping = lineWrapping
+        textContainer.lineBreakMode = .byWordWrapping
+
+        switch lineWrapping {
+        case .none:
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask.remove(.width)
+            textContainer.widthTracksTextView = false
+            textContainer.size = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        case .word:
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask.insert(.width)
+            textContainer.widthTracksTextView = true
+        }
+
+        textView.needsLayout = true
     }
 
     @objc private func clipViewBoundsDidChange() {
@@ -546,6 +572,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var layoutPrewarmingTask: Task<Void, Never>?
     private var prewarmedContent: AttributedString?
+    private var lineWrapping: CodeLineWrapping?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -555,11 +582,6 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         textView.isSelectable = true
         textView.allowsEditingTextAttributes = false
         textView.isScrollEnabled = true
-        textView.textContainer.widthTracksTextView = false
-        textView.textContainer.size = CGSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
         let layoutQueue = OperationQueue()
         layoutQueue.name = "CodeTextView.TextLayout"
         layoutQueue.maxConcurrentOperationCount = 1
@@ -589,6 +611,8 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     }
 
     func update(_ request: CodeTextRenderRequest) {
+        updateLineWrapping(request.lineWrapping)
+
         let fontSizeChanged = documentState.fontSize != request.fontSize
         let needsLayoutPrewarming = request.prewarmsLayout
             && (prewarmedContent != request.text || fontSizeChanged)
@@ -630,6 +654,23 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
                 fontSize: request.fontSize
             )
         }
+    }
+
+    private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {
+        guard self.lineWrapping != lineWrapping else { return }
+
+        self.lineWrapping = lineWrapping
+        textView.textContainer.lineBreakMode = .byWordWrapping
+        textView.textContainer.widthTracksTextView = lineWrapping == .word
+
+        if lineWrapping == .none {
+            textView.textContainer.size = CGSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+
+        textView.setNeedsLayout()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {

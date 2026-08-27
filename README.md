@@ -41,7 +41,7 @@ Or add the package to `Package.swift`:
 dependencies: [
     .package(
         url: "https://github.com/cavs1910/CodeViewerKit.git",
-        from: "0.3.0"
+        from: "0.4.0"
     )
 ]
 ```
@@ -122,6 +122,23 @@ documented by
 
 Prefer an explicit language when it is known. Automatic detection performs
 additional work and can be ambiguous for short snippets.
+
+### Line wrapping
+
+Long lines use horizontal scrolling by default. Pass `lineWrapping: .word` to
+wrap them at word boundaries instead:
+
+```swift
+CodeViewer(
+    documentID: "wrapped-example",
+    sourceCode: source,
+    highlightStore: highlights,
+    lineWrapping: .word
+)
+```
+
+On macOS, each legacy scrollbar is hidden automatically when the content fits
+along its axis.
 
 The viewer is visually neutral: apply your own frame, material, or Liquid Glass
 container around it. Source ranges without a syntax color use black in light

@@ -18,6 +18,7 @@ public struct CodeViewer: View {
     private let sourceCode: String
     private let highlightStore: CodeHighlightStore
     private let language: CodeLanguage
+    private let lineWrapping: CodeLineWrapping
     private let plainTextColor: Color?
 
     @Environment(\.colorScheme) private var colorScheme
@@ -34,6 +35,9 @@ public struct CodeViewer: View {
     ///   - language: The language used for syntax highlighting. Swift is the
     ///     default; pass ``CodeLanguage/automatic`` to detect it from the
     ///     source contents.
+    ///   - lineWrapping: How lines that exceed the viewer width are laid out.
+    ///     The default keeps logical lines intact and allows horizontal
+    ///     scrolling.
     ///   - plainTextColor: The color used for source ranges that do not yet
     ///     have a syntax color. Pass `nil` to use black in light mode and
     ///     white in dark mode.
@@ -42,12 +46,14 @@ public struct CodeViewer: View {
         sourceCode: String,
         highlightStore: CodeHighlightStore,
         language: CodeLanguage = .swift,
+        lineWrapping: CodeLineWrapping = .none,
         plainTextColor: Color? = nil
     ) {
         self.documentID = documentID
         self.sourceCode = sourceCode
         self.highlightStore = highlightStore
         self.language = language
+        self.lineWrapping = lineWrapping
         self.plainTextColor = plainTextColor
     }
 
@@ -64,6 +70,7 @@ public struct CodeViewer: View {
                 configuredColor: plainTextColor,
                 colorScheme: colorScheme
             ),
+            lineWrapping: lineWrapping,
             prewarmsLayout: highlightStore.isPrepared(
                 documentID: documentID,
                 sourceCode: sourceCode,
