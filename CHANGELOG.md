@@ -2,7 +2,7 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
-## Unreleased
+## 0.2.1 - 2026-08-26
 
 - apply the initial plain-text fallback as a native TextKit foreground color
   so dark-mode source is readable before highlighting completes;
