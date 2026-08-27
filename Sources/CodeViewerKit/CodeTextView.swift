@@ -4,12 +4,10 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 private typealias CodePlatformColor = NSColor
-private typealias CodePlatformEdgeInsets = NSEdgeInsets
 private typealias CodePlatformFont = NSFont
 #else
 import UIKit
 private typealias CodePlatformColor = UIColor
-private typealias CodePlatformEdgeInsets = UIEdgeInsets
 private typealias CodePlatformFont = UIFont
 #endif
 
@@ -22,7 +20,6 @@ struct CodeTextView: View {
     let text: AttributedString
     let plainTextColor: Color
     let prewarmsLayout: Bool
-    let scrollIndicatorInsets: EdgeInsets
 
     @State private var fontSize = PlatformCodeTextView.defaultFontSize
 
@@ -33,8 +30,7 @@ struct CodeTextView: View {
                 text: text,
                 plainTextColor: plainTextColor,
                 fontSize: fontSize,
-                prewarmsLayout: prewarmsLayout,
-                scrollIndicatorInsets: scrollIndicatorInsets
+                prewarmsLayout: prewarmsLayout
             )
         )
         .focusedSceneValue(\.codeTextFontSize, $fontSize)
@@ -102,18 +98,6 @@ private struct CodeTextRenderRequest {
     let plainTextColor: Color
     let fontSize: CGFloat
     let prewarmsLayout: Bool
-    let scrollIndicatorInsets: EdgeInsets
-}
-
-private extension EdgeInsets {
-    var codePlatformInsets: CodePlatformEdgeInsets {
-        CodePlatformEdgeInsets(
-            top: top,
-            left: leading,
-            bottom: bottom,
-            right: trailing
-        )
-    }
 }
 
 struct CodeTextDocumentChange: Equatable {
@@ -375,38 +359,7 @@ private struct PlatformCodeTextView: NSViewRepresentable {
 }
 
 @MainActor
-private final class MacCodeScrollView: NSScrollView {
-    override var scrollerStyle: NSScroller.Style {
-        get { super.scrollerStyle }
-        set { super.scrollerStyle = .overlay }
-    }
-
-    override func tile() {
-        super.tile()
-
-        guard horizontalScroller?.isHidden == true,
-              let verticalScroller
-        else { return }
-
-        var frame = verticalScroller.frame
-        frame.size.height = max(
-            0,
-            bounds.maxY - scrollerInsets.bottom - frame.minY
-        )
-        verticalScroller.frame = frame
-    }
-}
-
-@MainActor
 private final class MacCodeTextContainer: NSView {
-    private static let textHorizontalInset: CGFloat = 4
-    private static let contentInsets = NSEdgeInsets(
-        top: 0,
-        left: 0,
-        bottom: 0,
-        right: 0
-    )
-
     private let gutterView = MacCodeGutterView()
     private let scrollView: NSScrollView
     private let textView: NSTextView
@@ -416,7 +369,7 @@ private final class MacCodeTextContainer: NSView {
     override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
-        let scrollView = MacCodeScrollView()
+        let scrollView = NSScrollView()
         let textView = NSTextView(frame: .zero)
         guard textView.textLayoutManager != nil else {
             preconditionFailure("CodeTextView requires TextKit 2")
@@ -429,10 +382,7 @@ private final class MacCodeTextContainer: NSView {
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = Self.contentInsets
+        scrollView.scrollerStyle = .legacy
         scrollView.documentView = textView
 
         textView.drawsBackground = false
@@ -448,11 +398,6 @@ private final class MacCodeTextContainer: NSView {
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        textView.textContainerInset = NSSize(
-            width: Self.textHorizontalInset,
-            height: 8
-        )
-        textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
@@ -493,8 +438,6 @@ private final class MacCodeTextContainer: NSView {
     }
 
     func update(_ request: CodeTextRenderRequest) {
-        scrollView.scrollerInsets = request.scrollIndicatorInsets.codePlatformInsets
-
         guard let update = documentState.prepareUpdate(for: request) else {
             scheduleGutterUpdate()
             return
@@ -515,7 +458,7 @@ private final class MacCodeTextContainer: NSView {
 
         layoutSubtreeIfNeeded()
         let destination = update.change.isNewDocument
-            ? CGPoint(x: 0, y: -Self.contentInsets.top)
+            ? CGPoint.zero
             : visibleOrigin
         scrollView.contentView.scroll(to: destination)
         scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -612,10 +555,6 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         textView.isSelectable = true
         textView.allowsEditingTextAttributes = false
         textView.isScrollEnabled = true
-        textView.alwaysBounceHorizontal = true
-        textView.showsHorizontalScrollIndicator = true
-        textView.showsVerticalScrollIndicator = true
-        textView.textContainer.lineFragmentPadding = 0
         textView.textContainer.widthTracksTextView = false
         textView.textContainer.size = CGSize(
             width: CGFloat.greatestFiniteMagnitude,
@@ -650,10 +589,6 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     }
 
     func update(_ request: CodeTextRenderRequest) {
-        let indicatorInsets = request.scrollIndicatorInsets.codePlatformInsets
-        textView.verticalScrollIndicatorInsets = indicatorInsets
-        textView.horizontalScrollIndicatorInsets = indicatorInsets
-
         let fontSizeChanged = documentState.fontSize != request.fontSize
         let needsLayoutPrewarming = request.prewarmsLayout
             && (prewarmedContent != request.text || fontSizeChanged)

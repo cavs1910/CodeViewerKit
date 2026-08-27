@@ -19,7 +19,6 @@ public struct CodeViewer: View {
     private let highlightStore: CodeHighlightStore
     private let language: CodeLanguage
     private let plainTextColor: Color?
-    private let scrollIndicatorInsets: EdgeInsets
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -38,22 +37,18 @@ public struct CodeViewer: View {
     ///   - plainTextColor: The color used for source ranges that do not yet
     ///     have a syntax color. Pass `nil` to use black in light mode and
     ///     white in dark mode.
-    ///   - scrollIndicatorInsets: Insets applied only to the native vertical
-    ///     and horizontal scroll indicators.
     public init(
         documentID: String,
         sourceCode: String,
         highlightStore: CodeHighlightStore,
         language: CodeLanguage = .swift,
-        plainTextColor: Color? = nil,
-        scrollIndicatorInsets: EdgeInsets = EdgeInsets()
+        plainTextColor: Color? = nil
     ) {
         self.documentID = documentID
         self.sourceCode = sourceCode
         self.highlightStore = highlightStore
         self.language = language
         self.plainTextColor = plainTextColor
-        self.scrollIndicatorInsets = scrollIndicatorInsets
     }
 
     public var body: some View {
@@ -74,8 +69,7 @@ public struct CodeViewer: View {
                 sourceCode: sourceCode,
                 language: language,
                 colorScheme: colorScheme
-            ),
-            scrollIndicatorInsets: scrollIndicatorInsets
+            )
         )
         .task(id: highlightRequest) {
             await highlightStore.prepare(

@@ -12,8 +12,7 @@ final class PublicAPICompilationTests: XCTestCase {
             sourceCode: "import SwiftUI",
             highlightStore: highlights,
             language: .python,
-            plainTextColor: .orange,
-            scrollIndicatorInsets: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 4)
+            plainTextColor: .orange
         )
         _ = CodeViewerCommands()
 

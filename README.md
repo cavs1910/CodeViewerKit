@@ -123,9 +123,8 @@ documented by
 Prefer an explicit language when it is known. Automatic detection performs
 additional work and can be ambiguous for short snippets.
 
-The viewer is visually neutral: apply your own frame, padding, material, or
-Liquid Glass container around it. Indicator insets can be configured without
-moving the source text. Source ranges without a syntax color use black in light
+The viewer is visually neutral: apply your own frame, material, or Liquid Glass
+container around it. Source ranges without a syntax color use black in light
 mode and white in dark mode; override that fallback with `plainTextColor`:
 
 ```swift
@@ -133,13 +132,7 @@ CodeViewer(
     documentID: "example",
     sourceCode: source,
     highlightStore: highlights,
-    plainTextColor: .secondary,
-    scrollIndicatorInsets: EdgeInsets(
-        top: 8,
-        leading: 0,
-        bottom: 8,
-        trailing: 8
-    )
+    plainTextColor: .secondary
 )
 ```
 
