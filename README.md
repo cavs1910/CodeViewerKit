@@ -86,16 +86,16 @@ showing a different document so the viewer starts at the beginning.
 
 ### Languages
 
-Swift is the default. Select another common language with `language`, ask
-Highlight.js to detect it automatically, or pass any bundled Highlight.js
-language identifier as a string literal:
+Swift is the default. Pass an explicit Highlight.js language identifier in
+quotes, or use `.automatic` without quotes to ask Highlight.js to detect the
+language from the source contents:
 
 ```swift
 CodeViewer(
     documentID: "script",
     sourceCode: pythonSource,
     highlightStore: highlights,
-    language: .python
+    language: "python"
 )
 
 CodeViewer(
@@ -113,9 +113,11 @@ CodeViewer(
 )
 ```
 
-Predefined values include Swift, Python, JavaScript, TypeScript, JSON, HTML,
-CSS, Bash, C, C++, C#, Objective-C, Java, Kotlin, Go, Rust, Ruby, PHP, SQL,
-Markdown, and YAML. The complete set of bundled identifiers is documented by
+Bundled language identifiers include `"swift"`, `"python"`, `"javascript"`,
+`"typescript"`, `"json"`, `"html"`, `"css"`, `"bash"`, `"c"`, `"cpp"`,
+`"csharp"`, `"objectivec"`, `"java"`, `"kotlin"`, `"go"`, `"rust"`,
+`"ruby"`, `"php"`, `"sql"`, `"markdown"`, and `"yaml"`. The complete set is
+documented by
 [HighlightSwift](https://github.com/appstefan/HighlightSwift/blob/v1.1.0/Sources/HighlightSwift/Highlight/HighlightLanguage.swift).
 
 Prefer an explicit language when it is known. Automatic detection performs
