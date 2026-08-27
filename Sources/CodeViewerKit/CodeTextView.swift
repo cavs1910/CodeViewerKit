@@ -351,6 +351,17 @@ enum MacCodeScrollPosition {
     static func leadingOrigin(contentInsets: NSEdgeInsets) -> CGPoint {
         CGPoint(x: 0, y: -contentInsets.top)
     }
+
+    static func preservingContentOffset(
+        _ origin: CGPoint,
+        previousTopInset: CGFloat,
+        newTopInset: CGFloat
+    ) -> CGPoint {
+        CGPoint(
+            x: origin.x,
+            y: origin.y + previousTopInset - newTopInset
+        )
+    }
 }
 
 private struct PlatformCodeTextView: NSViewRepresentable {
@@ -433,6 +444,8 @@ private final class MacCodeTextContainer: NSView {
     override func layout() {
         super.layout()
 
+        let previousVisibleOrigin = scrollView.contentView.bounds.origin
+        let previousTopInset = scrollView.contentInsets.top
         let frames = CodeGutterMetrics.frames(
             in: bounds,
             gutterWidth: gutterView.requiredWidth
@@ -440,15 +453,22 @@ private final class MacCodeTextContainer: NSView {
         gutterView.frame = frames.gutter
         scrollView.frame = frames.text
         synchronizeToolbarInset()
+
+        let destination: CGPoint
         if needsInitialScrollPosition, window != nil {
             needsInitialScrollPosition = false
-            scrollView.contentView.scroll(
-                to: MacCodeScrollPosition.leadingOrigin(
-                    contentInsets: scrollView.contentInsets
-                )
+            destination = MacCodeScrollPosition.leadingOrigin(
+                contentInsets: scrollView.contentInsets
             )
-            scrollView.reflectScrolledClipView(scrollView.contentView)
+        } else {
+            destination = MacCodeScrollPosition.preservingContentOffset(
+                previousVisibleOrigin,
+                previousTopInset: previousTopInset,
+                newTopInset: scrollView.contentInsets.top
+            )
         }
+        scrollView.contentView.scroll(to: destination)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
         scheduleGutterUpdate()
     }
 

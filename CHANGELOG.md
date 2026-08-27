@@ -2,6 +2,11 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## Unreleased
+
+- preserve the visible source position when a macOS window resize changes the
+  toolbar underlap inset, keeping the first line clear of the toolbar;
+
 ## 0.6.2 - 2026-08-27
 
 - make grammar registration public and remove the fixed language catalog from

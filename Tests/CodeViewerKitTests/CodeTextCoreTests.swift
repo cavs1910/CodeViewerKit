@@ -112,6 +112,25 @@ final class CodeTextCoreTests: XCTestCase {
 
         XCTAssertEqual(origin, CGPoint(x: 0, y: -52))
     }
+
+    func testMacScrollPositionPreservesContentOffsetWhenToolbarInsetChanges() {
+        XCTAssertEqual(
+            MacCodeScrollPosition.preservingContentOffset(
+                CGPoint(x: 7, y: -52),
+                previousTopInset: 52,
+                newTopInset: 60
+            ),
+            CGPoint(x: 7, y: -60)
+        )
+        XCTAssertEqual(
+            MacCodeScrollPosition.preservingContentOffset(
+                CGPoint(x: 7, y: 148),
+                previousTopInset: 52,
+                newTopInset: 60
+            ),
+            CGPoint(x: 7, y: 140)
+        )
+    }
     #endif
 
     func testPlainTextStyleUsesAnAppearanceAwareDefault() {
