@@ -2,6 +2,11 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## Unreleased
+
+- support explicit syntax-highlighting languages, automatic detection, and
+  custom bundled Highlight.js language identifiers;
+
 ## 0.1.1 - 2026-08-26
 
 - use an appearance-aware fallback color before progressive highlighting is

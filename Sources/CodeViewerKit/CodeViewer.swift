@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A read-only Swift source viewer backed by TextKit 2.
+/// A read-only source-code viewer backed by TextKit 2.
 ///
 /// `CodeViewer` provides progressive syntax highlighting, logical line
 /// numbers, selection, native scrolling, and viewport-based layout on iOS,
@@ -10,26 +10,31 @@ public struct CodeViewer: View {
     private struct HighlightRequest: Hashable {
         let documentID: String
         let sourceCode: String
+        let language: CodeLanguage
         let usesDarkColors: Bool
     }
 
     private let documentID: String
     private let sourceCode: String
     private let highlightStore: CodeHighlightStore
+    private let language: CodeLanguage
     private let plainTextColor: Color?
     private let scrollIndicatorInsets: EdgeInsets
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Creates a read-only Swift source viewer.
+    /// Creates a read-only source-code viewer.
     ///
     /// - Parameters:
     ///   - documentID: A stable identity for the document. Changing it resets
     ///     the native selection and scroll position; updating the source with
     ///     the same identity preserves them when possible.
-    ///   - sourceCode: The complete Swift source to display.
+    ///   - sourceCode: The complete source code to display.
     ///   - highlightStore: A session-scoped store shared by viewers that
     ///     should reuse prepared highlighting.
+    ///   - language: The language used for syntax highlighting. Swift is the
+    ///     default; pass ``CodeLanguage/automatic`` to detect it from the
+    ///     source contents.
     ///   - plainTextColor: The color used for source ranges that do not yet
     ///     have a syntax color. Pass `nil` to use black in light mode and
     ///     white in dark mode.
@@ -39,12 +44,14 @@ public struct CodeViewer: View {
         documentID: String,
         sourceCode: String,
         highlightStore: CodeHighlightStore,
+        language: CodeLanguage = .swift,
         plainTextColor: Color? = nil,
         scrollIndicatorInsets: EdgeInsets = EdgeInsets()
     ) {
         self.documentID = documentID
         self.sourceCode = sourceCode
         self.highlightStore = highlightStore
+        self.language = language
         self.plainTextColor = plainTextColor
         self.scrollIndicatorInsets = scrollIndicatorInsets
     }
@@ -56,6 +63,7 @@ public struct CodeViewer: View {
                 to: highlightStore.displayedCode(
                     documentID: documentID,
                     sourceCode: sourceCode,
+                    language: language,
                     colorScheme: colorScheme
                 ),
                 color: CodePlainTextStyle.resolve(
@@ -66,6 +74,7 @@ public struct CodeViewer: View {
             prewarmsLayout: highlightStore.isPrepared(
                 documentID: documentID,
                 sourceCode: sourceCode,
+                language: language,
                 colorScheme: colorScheme
             ),
             scrollIndicatorInsets: scrollIndicatorInsets
@@ -74,6 +83,7 @@ public struct CodeViewer: View {
             await highlightStore.prepare(
                 documentID: documentID,
                 sourceCode: sourceCode,
+                language: language,
                 colorScheme: colorScheme
             )
         }
@@ -83,6 +93,7 @@ public struct CodeViewer: View {
         HighlightRequest(
             documentID: documentID,
             sourceCode: sourceCode,
+            language: language,
             usesDarkColors: colorScheme == .dark
         )
     }

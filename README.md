@@ -4,14 +4,14 @@
 [![Swift 6](https://img.shields.io/badge/Swift-6-orange.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-CodeViewerKit is a minimal, read-only Swift source viewer for SwiftUI on iOS,
+CodeViewerKit is a minimal, read-only source-code viewer for SwiftUI on iOS,
 iPadOS, and macOS. It uses TextKit 2 for native selection, scrolling, and
 viewport-based layout instead of rendering a complete document as one SwiftUI
 `Text` value.
 
 ## Features
 
-- progressive Swift syntax highlighting with a fast plain-text first frame;
+- progressive syntax highlighting for Swift and other languages;
 - appearance-aware plain text while highlighting is prepared;
 - logical line numbers that stay aligned when a source line wraps;
 - Menlo with a monospaced system fallback;
@@ -84,6 +84,43 @@ struct ContentView: View {
 same document so selection and scroll position are preserved. Change it when
 showing a different document so the viewer starts at the beginning.
 
+### Languages
+
+Swift is the default. Select another common language with `language`, ask
+Highlight.js to detect it automatically, or pass any bundled Highlight.js
+language identifier as a string literal:
+
+```swift
+CodeViewer(
+    documentID: "script",
+    sourceCode: pythonSource,
+    highlightStore: highlights,
+    language: .python
+)
+
+CodeViewer(
+    documentID: "detected-source",
+    sourceCode: unknownSource,
+    highlightStore: highlights,
+    language: .automatic
+)
+
+CodeViewer(
+    documentID: "elixir-source",
+    sourceCode: elixirSource,
+    highlightStore: highlights,
+    language: "elixir"
+)
+```
+
+Predefined values include Swift, Python, JavaScript, TypeScript, JSON, HTML,
+CSS, Bash, C, C++, C#, Objective-C, Java, Kotlin, Go, Rust, Ruby, PHP, SQL,
+Markdown, and YAML. The complete set of bundled identifiers is documented by
+[HighlightSwift](https://github.com/appstefan/HighlightSwift/blob/1.1.0/Sources/HighlightSwift/Highlight/HighlightLanguage.swift).
+
+Prefer an explicit language when it is known. Automatic detection performs
+additional work and can be ambiguous for short snippets.
+
 The viewer is visually neutral: apply your own frame, padding, material, or
 Liquid Glass container around it. Indicator insets can be configured without
 moving the source text. Source ranges without a syntax color use black in light
@@ -125,9 +162,9 @@ struct ExampleApp: App {
 
 ## Scope
 
-CodeViewerKit intentionally displays Swift source and is read-only. Editing,
-language-server integration, diagnostics, minimaps, and non-Swift grammars are
-outside its current scope.
+CodeViewerKit is intentionally read-only. Editing, language-server integration,
+diagnostics, minimaps, and dynamically installed grammars are outside its
+current scope.
 
 ## Architecture
 
@@ -139,8 +176,8 @@ the platform-specific selection and scrolling behavior.
 Highlighting is provided by
 [HighlightSwift](https://github.com/appstefan/HighlightSwift). The first 80
 logical lines are highlighted with user-initiated priority; the complete
-document finishes at utility priority and is cached by document, contents, and
-appearance.
+document finishes at utility priority and is cached by document, contents,
+language, and appearance.
 
 ## Contributing
 

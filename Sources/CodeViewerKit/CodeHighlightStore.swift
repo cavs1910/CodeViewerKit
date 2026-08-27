@@ -2,7 +2,7 @@ import HighlightSwift
 import Observation
 import SwiftUI
 
-/// A session-scoped cache for progressively highlighted Swift source code.
+/// A session-scoped cache for progressively highlighted source code.
 ///
 /// Create one store at a stable ownership boundary and pass it to each
 /// ``CodeViewer`` that should share prepared documents. Replacing the store
@@ -24,6 +24,7 @@ public final class CodeHighlightStore {
     private struct Key: Hashable, Sendable {
         let documentID: String
         let sourceCode: String
+        let language: CodeLanguage
         let appearance: Appearance
     }
 
@@ -38,11 +39,13 @@ public final class CodeHighlightStore {
     func displayedCode(
         documentID: String,
         sourceCode: String,
+        language: CodeLanguage,
         colorScheme: ColorScheme
     ) -> AttributedString {
         let key = key(
             documentID: documentID,
             sourceCode: sourceCode,
+            language: language,
             colorScheme: colorScheme
         )
         return snippets[key] ?? AttributedString(sourceCode)
@@ -50,23 +53,25 @@ public final class CodeHighlightStore {
 
     /// Returns whether the complete highlighted representation is cached.
     ///
-    /// The document identity, source contents, and color scheme all
+    /// The document identity, source contents, language, and color scheme all
     /// participate in the cache key.
     public func isPrepared(
         documentID: String,
         sourceCode: String,
+        language: CodeLanguage = .swift,
         colorScheme: ColorScheme
     ) -> Bool {
         completedKeys.contains(
             key(
                 documentID: documentID,
                 sourceCode: sourceCode,
+                language: language,
                 colorScheme: colorScheme
             )
         )
     }
 
-    /// Progressively prepares highlighting for a Swift source document.
+    /// Progressively prepares highlighting for a source document.
     ///
     /// The first 80 logical lines are prepared with user-initiated priority.
     /// The complete document then finishes at utility priority. Calling this
@@ -74,11 +79,13 @@ public final class CodeHighlightStore {
     public func prepare(
         documentID: String,
         sourceCode: String,
+        language: CodeLanguage = .swift,
         colorScheme: ColorScheme
     ) async {
         let key = key(
             documentID: documentID,
             sourceCode: sourceCode,
+            language: language,
             colorScheme: colorScheme
         )
         guard !completedKeys.contains(key) else { return }
@@ -89,10 +96,11 @@ public final class CodeHighlightStore {
             let (leadingSource, remainingSource) = ProgressiveCodeHighlight
                 .splitLeadingLines(sourceCode)
             let leadingText = await Task.detached(priority: .userInitiated) {
-                try? await highlighter.attributedText(
+                await highlightSource(
                     leadingSource,
-                    language: .swift,
-                    colors: key.appearance.colors
+                    language: key.language,
+                    colors: key.appearance.colors,
+                    using: highlighter
                 )
             }.value
 
@@ -108,11 +116,12 @@ public final class CodeHighlightStore {
             task = existingTask
         } else {
             task = Task.detached(priority: .utility) {
-                (try? await highlighter.attributedText(
+                await highlightSource(
                     sourceCode,
-                    language: .swift,
-                    colors: key.appearance.colors
-                )) ?? AttributedString(sourceCode)
+                    language: key.language,
+                    colors: key.appearance.colors,
+                    using: highlighter
+                ) ?? AttributedString(sourceCode)
             }
             preparationTasks[key] = task
         }
@@ -135,12 +144,34 @@ public final class CodeHighlightStore {
     private func key(
         documentID: String,
         sourceCode: String,
+        language: CodeLanguage,
         colorScheme: ColorScheme
     ) -> Key {
         Key(
             documentID: documentID,
             sourceCode: sourceCode,
+            language: language,
             appearance: colorScheme == .dark ? .dark : .light
         )
     }
+}
+
+private func highlightSource(
+    _ sourceCode: String,
+    language: CodeLanguage,
+    colors: HighlightColors,
+    using highlighter: Highlight
+) async -> AttributedString? {
+    if let identifier = language.identifier {
+        return try? await highlighter.attributedText(
+            sourceCode,
+            language: identifier,
+            colors: colors
+        )
+    }
+
+    return try? await highlighter.attributedText(
+        sourceCode,
+        colors: colors
+    )
 }
