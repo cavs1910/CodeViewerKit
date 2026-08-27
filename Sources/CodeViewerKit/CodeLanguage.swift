@@ -1,15 +1,16 @@
+import Foundation
+
 /// A syntax-highlighting language understood by `CodeViewerKit`.
 ///
-/// Use one of the common predefined values, ``automatic``, or any language
-/// alias bundled by Highlight.js:
+/// Use one of the predefined values, ``automatic``, or a supported alias:
 ///
 /// ```swift
-/// let language: CodeLanguage = "elixir"
+/// let language: CodeLanguage = "python"
 /// ```
 public struct CodeLanguage: Hashable, Sendable, ExpressibleByStringLiteral {
     let identifier: String?
 
-    /// Creates a language from a Highlight.js language identifier or alias.
+    /// Creates a language from a Tree-sitter language identifier or alias.
     public init(_ identifier: String) {
         self.identifier = identifier
     }
@@ -22,7 +23,7 @@ public struct CodeLanguage: Hashable, Sendable, ExpressibleByStringLiteral {
         self.identifier = identifier
     }
 
-    /// Lets Highlight.js detect the language from the source contents.
+    /// Detects a supported language from the source contents.
     public static let automatic = Self(identifier: nil)
 
     public static let bash: Self = "bash"
@@ -47,4 +48,77 @@ public struct CodeLanguage: Hashable, Sendable, ExpressibleByStringLiteral {
     public static let swift: Self = "swift"
     public static let typeScript: Self = "typescript"
     public static let yaml: Self = "yaml"
+}
+
+extension CodeLanguage {
+    func resolvedIdentifier(for sourceCode: String) -> String {
+        identifier ?? AutomaticCodeLanguageDetector.detect(sourceCode)
+    }
+}
+
+private enum AutomaticCodeLanguageDetector {
+    static func detect(_ sourceCode: String) -> String {
+        let source = sourceCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercase = source.lowercased()
+
+        if source.hasPrefix("{") || source.hasPrefix("[") {
+            if (try? JSONSerialization.jsonObject(with: Data(source.utf8))) != nil {
+                return "json"
+            }
+        }
+        if lowercase.hasPrefix("<?php") { return "php" }
+        if lowercase.hasPrefix("<!doctype html") || lowercase.hasPrefix("<html") {
+            return "html"
+        }
+        if source.hasPrefix("#!") {
+            if lowercase.contains("python") { return "python" }
+            if lowercase.contains("ruby") { return "ruby" }
+            return "bash"
+        }
+        if source.contains("@interface") || source.contains("@implementation") {
+            return "objectivec"
+        }
+        if source.contains("import SwiftUI") || source.contains("import Foundation") {
+            return "swift"
+        }
+        if lowercase.contains("using system;") || lowercase.contains("namespace ") {
+            return "csharp"
+        }
+        if lowercase.hasPrefix("package ") && source.contains("fun ") {
+            return "kotlin"
+        }
+        if lowercase.hasPrefix("package ") && source.contains("class ") {
+            return "java"
+        }
+        if lowercase.hasPrefix("package ") || source.contains("func main()") {
+            return "go"
+        }
+        if source.contains("fn main()") || source.contains("let mut ") {
+            return "rust"
+        }
+        if source.contains("interface ") || source.contains(": string") {
+            return "typescript"
+        }
+        if source.contains("=>") || source.contains("console.log(") {
+            return "javascript"
+        }
+        if lowercase.hasPrefix("select ") || lowercase.hasPrefix("insert ")
+            || lowercase.hasPrefix("update ") || lowercase.hasPrefix("create table ") {
+            return "sql"
+        }
+        if source.hasPrefix("# ") || source.contains("\n## ")
+            || source.contains("```") {
+            return "markdown"
+        }
+        if source.contains("def ") && source.contains(":") { return "python" }
+        if source.contains("#include") {
+            return source.contains("std::") ? "cpp" : "c"
+        }
+        if source.contains("{") && source.contains("}")
+            && (source.contains("color:") || source.contains("display:")) {
+            return "css"
+        }
+        if source.hasPrefix("---") { return "yaml" }
+        return "swift"
+    }
 }

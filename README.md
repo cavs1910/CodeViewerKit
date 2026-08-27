@@ -11,8 +11,7 @@ viewport-based layout instead of rendering a complete document as one SwiftUI
 
 ## Features
 
-- native Tree-sitter highlighting for Swift and progressive highlighting for
-  other languages;
+- native Tree-sitter highlighting for every supported language;
 - appearance-aware plain text while highlighting is prepared;
 - logical line numbers that stay aligned when a source line wraps;
 - Menlo with a monospaced system fallback;
@@ -87,9 +86,9 @@ showing a different document so the viewer starts at the beginning.
 
 ### Languages
 
-Swift is the default. Pass an explicit Highlight.js language identifier in
-quotes, or use `.automatic` without quotes to ask Highlight.js to detect the
-language from the source contents:
+Swift is the default. Pass an explicit supported Tree-sitter language in
+quotes, or use `.automatic` without quotes to detect a language from the
+source contents:
 
 ```swift
 CodeViewer(
@@ -107,20 +106,20 @@ CodeViewer(
 )
 
 CodeViewer(
-    documentID: "elixir-source",
-    sourceCode: elixirSource,
+    documentID: "shell-script",
+    sourceCode: shellSource,
     highlightStore: highlights,
-    language: "elixir"
+    language: "shell"
 )
 ```
 
-Swift uses a native Tree-sitter parser. Other bundled language identifiers
-include `"python"`, `"javascript"`,
+Supported language identifiers include `"swift"`, `"python"`, `"javascript"`,
 `"typescript"`, `"json"`, `"html"`, `"css"`, `"bash"`, `"c"`, `"cpp"`,
 `"csharp"`, `"objectivec"`, `"java"`, `"kotlin"`, `"go"`, `"rust"`,
-`"ruby"`, `"php"`, `"sql"`, `"markdown"`, and `"yaml"`. The complete set is
-documented by
-[HighlightSwift](https://github.com/appstefan/HighlightSwift/blob/v1.1.0/Sources/HighlightSwift/Highlight/HighlightLanguage.swift).
+`"ruby"`, `"php"`, `"shell"`, `"sql"`, `"markdown"`, and `"yaml"`.
+Common aliases such as `"js"`, `"ts"`, `"py"`, `"rb"`, `"sh"`, and `"yml"`
+are also accepted. Unknown identifiers render as plain text without loading a
+second highlighting engine.
 
 Prefer an explicit language when it is known. Automatic detection performs
 additional work and can be ambiguous for short snippets.
@@ -187,15 +186,16 @@ indexing, gutter geometry, visible marker resolution, and coalesced redraws.
 Small AppKit and UIKit adapters configure the native TextKit 2 views and handle
 the platform-specific selection and scrolling behavior.
 
-Swift highlighting is provided by
+Highlighting is provided by
 [Tree-sitter](https://github.com/tree-sitter/tree-sitter) through
-[SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter). It parses
-the complete document and applies token colors directly to the native
-attributed string without JavaScript or HTML conversion. Other languages use
-[HighlightSwift](https://github.com/appstefan/HighlightSwift): their first 80
-logical lines are prepared with user-initiated priority before the complete
-document finishes at utility priority. Results from both engines are cached by
-document, contents, language, and appearance.
+[SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter) and the
+offline grammars in
+[TreeSitterLanguages](https://github.com/simonbs/TreeSitterLanguages). The
+complete document is parsed away from the main actor and token colors are
+applied directly to the native attributed string without JavaScript or HTML
+conversion. Results are cached by document, contents, language, and appearance.
+Kotlin uses the Java grammar and Objective-C uses the C grammar as lightweight
+Tree-sitter approximations.
 
 ## Contributing
 

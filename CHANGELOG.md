@@ -4,9 +4,11 @@ All notable changes to CodeViewerKit are documented in this file.
 
 ## Unreleased
 
-- use native Tree-sitter parsing and direct attributed-string styling for
-  complete Swift documents while retaining HighlightSwift as the progressive
-  fallback for other languages;
+- use native Tree-sitter parsing and direct attributed-string styling for every
+  supported language;
+- remove HighlightSwift, its JavaScript runtime, HTML conversion, and the
+  progressive two-stage highlighting path;
+- add offline language aliases and lightweight automatic detection;
 
 ## 0.4.2 - 2026-08-27
 

@@ -1,7 +1,43 @@
 import Foundation
-import HighlightSwift
 import SwiftTreeSitter
+import TreeSitterBash
+import TreeSitterBashQueries
+import TreeSitterC
+import TreeSitterCQueries
+import TreeSitterCPP
+import TreeSitterCPPQueries
+import TreeSitterCSharp
+import TreeSitterCSharpQueries
+import TreeSitterCSS
+import TreeSitterCSSQueries
+import TreeSitterGo
+import TreeSitterGoQueries
+import TreeSitterHTML
+import TreeSitterHTMLQueries
+import TreeSitterJava
+import TreeSitterJavaQueries
+import TreeSitterJavaScript
+import TreeSitterJavaScriptQueries
+import TreeSitterJSON
+import TreeSitterJSONQueries
+import TreeSitterMarkdown
+import TreeSitterMarkdownQueries
+import TreeSitterPHP
+import TreeSitterPHPQueries
+import TreeSitterPython
+import TreeSitterPythonQueries
+import TreeSitterRuby
+import TreeSitterRubyQueries
+import TreeSitterRust
+import TreeSitterRustQueries
+import TreeSitterSQL
+import TreeSitterSQLQueries
 import TreeSitterSwift
+import TreeSitterSwiftQueries
+import TreeSitterTypeScript
+import TreeSitterTypeScriptQueries
+import TreeSitterYAML
+import TreeSitterYAMLQueries
 
 #if os(macOS)
 import AppKit
@@ -14,95 +50,71 @@ private typealias CodeHighlightPlatformColor = UIColor
 enum CodeHighlightAppearance: Hashable, Sendable {
     case light
     case dark
-
-    var highlightSwiftColors: HighlightColors {
-        switch self {
-        case .light: .light(.xcode)
-        case .dark: .dark(.xcode)
-        }
-    }
 }
 
 actor CodeSyntaxHighlighter {
-    private let fallbackHighlighter = Highlight()
-    private var swiftTreeSitterHighlighter: SwiftTreeSitterHighlighter?
-    private var swiftHighlighterInitializationFailed = false
-
-    nonisolated static func highlightsWholeDocumentImmediately(
-        language: CodeLanguage
-    ) -> Bool {
-        language.identifier == CodeLanguage.swift.identifier
-    }
+    private var highlighters = [String: TreeSitterCodeHighlighter]()
+    private var failedLanguages = Set<String>()
 
     func attributedText(
         _ sourceCode: String,
         language: CodeLanguage,
         appearance: CodeHighlightAppearance
-    ) async -> AttributedString? {
-        if Self.highlightsWholeDocumentImmediately(language: language),
-           let highlightedText = swiftAttributedText(
-               sourceCode,
-               appearance: appearance
-           ) {
-            return highlightedText
-        }
-
-        if let identifier = language.identifier {
-            return try? await fallbackHighlighter.attributedText(
-                sourceCode,
-                language: identifier,
-                colors: appearance.highlightSwiftColors
-            )
-        }
-
-        return try? await fallbackHighlighter.attributedText(
-            sourceCode,
-            colors: appearance.highlightSwiftColors
-        )
-    }
-
-    private func swiftAttributedText(
-        _ sourceCode: String,
-        appearance: CodeHighlightAppearance
     ) -> AttributedString? {
-        guard let highlighter = preparedSwiftHighlighter() else { return nil }
+        let identifier = language.resolvedIdentifier(for: sourceCode)
+        guard let specification = TreeSitterLanguageRegistry.specification(
+            for: identifier
+        ) else {
+            return AttributedString(sourceCode)
+        }
+        guard let highlighter = preparedHighlighter(for: specification) else {
+            return nil
+        }
         return try? highlighter.attributedText(
             sourceCode,
             appearance: appearance
         )
     }
 
-    private func preparedSwiftHighlighter() -> SwiftTreeSitterHighlighter? {
-        if let swiftTreeSitterHighlighter {
-            return swiftTreeSitterHighlighter
+    private func preparedHighlighter(
+        for specification: TreeSitterLanguageSpecification
+    ) -> TreeSitterCodeHighlighter? {
+        if let highlighter = highlighters[specification.identifier] {
+            return highlighter
         }
-        guard !swiftHighlighterInitializationFailed else { return nil }
+        guard !failedLanguages.contains(specification.identifier) else {
+            return nil
+        }
 
         do {
-            let highlighter = try SwiftTreeSitterHighlighter()
-            swiftTreeSitterHighlighter = highlighter
+            let highlighter = try TreeSitterCodeHighlighter(
+                specification: specification
+            )
+            highlighters[specification.identifier] = highlighter
             return highlighter
         } catch {
-            swiftHighlighterInitializationFailed = true
+            failedLanguages.insert(specification.identifier)
             return nil
         }
     }
 }
 
-final class SwiftTreeSitterHighlighter {
+final class TreeSitterCodeHighlighter {
     private let parser: Parser
-    private let highlightQuery: Query
+    private let highlightQuery: SwiftTreeSitter.Query
 
-    init() throws {
-        let configuration = try SwiftTreeSitterResources.configuration()
-        guard let highlightQuery = configuration.queries[.highlights] else {
-            throw SwiftTreeSitterHighlightError.missingHighlightQuery
-        }
-
+    init(specification: TreeSitterLanguageSpecification) throws {
+        let language = Language(specification.language)
+        let queryData = try specification.queryURLs
+            .map { try Data(contentsOf: $0) }
+            .joinedQueries()
         let parser = Parser()
-        try parser.setLanguage(configuration.language)
+        try parser.setLanguage(language)
         self.parser = parser
-        self.highlightQuery = highlightQuery
+        self.highlightQuery = try SwiftTreeSitter.Query(
+            language: language,
+            data: queryData
+        )
     }
 
     func attributedText(
@@ -110,7 +122,7 @@ final class SwiftTreeSitterHighlighter {
         appearance: CodeHighlightAppearance
     ) throws -> AttributedString {
         guard let tree = parser.parse(sourceCode) else {
-            throw SwiftTreeSitterHighlightError.parsingFailed
+            throw TreeSitterHighlightError.parsingFailed
         }
 
         let highlights = highlightQuery.execute(in: tree)
@@ -119,7 +131,7 @@ final class SwiftTreeSitterHighlighter {
         let result = NSMutableAttributedString(string: sourceCode)
 
         for highlight in highlights {
-            guard let color = SwiftTreeSitterPalette.color(
+            guard let color = TreeSitterPalette.color(
                 for: highlight.nameComponents,
                 appearance: appearance
             ), NSMaxRange(highlight.range) <= result.length else {
@@ -140,69 +152,103 @@ final class SwiftTreeSitterHighlighter {
     }
 }
 
-private enum SwiftTreeSitterResources {
-    private static let bundleName = "TreeSitterSwift_TreeSitterSwift.bundle"
+struct TreeSitterLanguageSpecification {
+    let identifier: String
+    let language: OpaquePointer
+    let queryURLs: [URL]
+}
 
-    static func configuration() throws -> LanguageConfiguration {
-        guard let queriesURL = queriesURL() else {
-            throw SwiftTreeSitterHighlightError.missingHighlightQuery
+private enum TreeSitterLanguageRegistry {
+    static func specification(
+        for identifier: String
+    ) -> TreeSitterLanguageSpecification? {
+        switch normalized(identifier) {
+        case "bash", "shell", "sh", "zsh":
+            specification("bash", tree_sitter_bash(), TreeSitterBashQueries.Query.highlightsFileURL)
+        case "c":
+            specification("c", tree_sitter_c(), TreeSitterCQueries.Query.highlightsFileURL)
+        case "cpp", "c++", "cc", "cxx":
+            specification(
+                "cpp", tree_sitter_cpp(),
+                TreeSitterCQueries.Query.highlightsFileURL,
+                TreeSitterCPPQueries.Query.highlightsFileURL
+            )
+        case "csharp", "c#", "cs":
+            specification("csharp", tree_sitter_c_sharp(), TreeSitterCSharpQueries.Query.highlightsFileURL)
+        case "css":
+            specification("css", tree_sitter_css(), TreeSitterCSSQueries.Query.highlightsFileURL)
+        case "go", "golang":
+            specification("go", tree_sitter_go(), TreeSitterGoQueries.Query.highlightsFileURL)
+        case "html", "htm":
+            specification("html", tree_sitter_html(), TreeSitterHTMLQueries.Query.highlightsFileURL)
+        case "java":
+            specification("java", tree_sitter_java(), TreeSitterJavaQueries.Query.highlightsFileURL)
+        case "javascript", "js", "jsx", "mjs", "cjs":
+            specification("javascript", tree_sitter_javascript(), TreeSitterJavaScriptQueries.Query.highlightsFileURL)
+        case "json":
+            specification("json", tree_sitter_json(), TreeSitterJSONQueries.Query.highlightsFileURL)
+        case "kotlin", "kt", "kts":
+            specification("kotlin", tree_sitter_java(), TreeSitterJavaQueries.Query.highlightsFileURL)
+        case "markdown", "md":
+            specification("markdown", tree_sitter_markdown(), TreeSitterMarkdownQueries.Query.highlightsFileURL)
+        case "objectivec", "objective-c", "objc", "m", "mm":
+            specification("objectivec", tree_sitter_c(), TreeSitterCQueries.Query.highlightsFileURL)
+        case "php":
+            specification("php", tree_sitter_php(), TreeSitterPHPQueries.Query.highlightsFileURL)
+        case "python", "py":
+            specification("python", tree_sitter_python(), TreeSitterPythonQueries.Query.highlightsFileURL)
+        case "ruby", "rb":
+            specification("ruby", tree_sitter_ruby(), TreeSitterRubyQueries.Query.highlightsFileURL)
+        case "rust", "rs":
+            specification("rust", tree_sitter_rust(), TreeSitterRustQueries.Query.highlightsFileURL)
+        case "sql":
+            specification("sql", tree_sitter_sql(), TreeSitterSQLQueries.Query.highlightsFileURL)
+        case "swift":
+            specification("swift", tree_sitter_swift(), TreeSitterSwiftQueries.Query.highlightsFileURL)
+        case "typescript", "ts":
+            specification(
+                "typescript", tree_sitter_typescript(),
+                TreeSitterJavaScriptQueries.Query.highlightsFileURL,
+                TreeSitterTypeScriptQueries.Query.highlightsFileURL
+            )
+        case "yaml", "yml":
+            specification("yaml", tree_sitter_yaml(), TreeSitterYAMLQueries.Query.highlightsFileURL)
+        default:
+            nil
         }
-        return try LanguageConfiguration(
-            tree_sitter_swift(),
-            name: "Swift",
-            queriesURL: queriesURL
+    }
+
+    private static func specification(
+        _ identifier: String,
+        _ language: OpaquePointer,
+        _ queryURLs: URL...
+    ) -> TreeSitterLanguageSpecification {
+        TreeSitterLanguageSpecification(
+            identifier: identifier,
+            language: language,
+            queryURLs: queryURLs
         )
     }
 
-    private static func queriesURL() -> URL? {
-        // SwiftPM uses a flat resource bundle beside command-line and test
-        // executables on macOS, while SwiftTreeSitter currently probes only
-        // Contents/Resources. Keep both layouts until its loader handles both.
-        let discoveredBundles = Bundle.allBundles + Bundle.allFrameworks
-        let roots = [
-            Bundle.main.bundleURL,
-            Bundle.main.resourceURL,
-            Bundle.main.executableURL?.deletingLastPathComponent()
-        ].compactMap { $0 } + discoveredBundles.flatMap { bundle in
-            [
-                bundle.bundleURL,
-                bundle.resourceURL,
-                bundle.bundleURL.deletingLastPathComponent()
-            ].compactMap { $0 }
-        }
-
-        for root in roots {
-            let parserBundle = root.lastPathComponent == bundleName
-                ? root
-                : root.appendingPathComponent(bundleName, isDirectory: true)
-            let candidates = [
-                parserBundle.appendingPathComponent("queries", isDirectory: true),
-                parserBundle.appendingPathComponent(
-                    "Contents/Resources/queries",
-                    isDirectory: true
-                )
-            ]
-            if let candidate = candidates.first(where: { queriesURL in
-                FileManager.default.isReadableFile(
-                    atPath: queriesURL
-                        .appendingPathComponent("highlights.scm")
-                        .path
-                )
-            }) {
-                return candidate
-            }
-        }
-
-        return nil
+    private static func normalized(_ identifier: String) -> String {
+        identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 
-private enum SwiftTreeSitterHighlightError: Error {
-    case missingHighlightQuery
+private extension Array where Element == Data {
+    func joinedQueries() -> Data {
+        reduce(into: Data()) { result, query in
+            if !result.isEmpty { result.append(contentsOf: [0x0A]) }
+            result.append(query)
+        }
+    }
+}
+
+private enum TreeSitterHighlightError: Error {
     case parsingFailed
 }
 
-private enum SwiftTreeSitterPalette {
+private enum TreeSitterPalette {
     static func color(
         for nameComponents: [String],
         appearance: CodeHighlightAppearance
@@ -210,20 +256,24 @@ private enum SwiftTreeSitterPalette {
         guard let category = nameComponents.first else { return nil }
 
         return switch category {
-        case "attribute":
+        case "attribute", "property":
             color(light: 0x9C2F_AE, dark: 0xD0A8_FF, appearance: appearance)
         case "boolean", "character", "constant", "number":
             color(light: 0x272A_D8, dark: 0xD0BF_69, appearance: appearance)
         case "comment":
             color(light: 0x5D6C_79, dark: 0x7F8C_98, appearance: appearance)
-        case "constructor", "function":
+        case "constructor", "function", "method":
             color(light: 0x326D_74, dark: 0x67B7_A4, appearance: appearance)
-        case "keyword", "label":
+        case "keyword", "label", "operator", "punctuation", "tag", "text":
             color(light: 0xAD3D_A4, dark: 0xFF7A_B2, appearance: appearance)
         case "string":
             color(light: 0xD12F_1B, dark: 0xFC6A_5D, appearance: appearance)
         case "type":
             color(light: 0x703D_AA, dark: 0xDABA_FF, appearance: appearance)
+        case "variable":
+            nameComponents.contains("builtin")
+                ? color(light: 0x703D_AA, dark: 0xDABA_FF, appearance: appearance)
+                : nil
         default:
             nil
         }

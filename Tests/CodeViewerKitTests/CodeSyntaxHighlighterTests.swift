@@ -9,70 +9,98 @@ import UIKit
 #endif
 
 final class CodeSyntaxHighlighterTests: XCTestCase {
-    func testSwiftUsesTheWholeDocumentTreeSitterPath() {
-        XCTAssertTrue(
-            CodeSyntaxHighlighter.highlightsWholeDocumentImmediately(
-                language: .swift
-            )
-        )
-        XCTAssertFalse(
-            CodeSyntaxHighlighter.highlightsWholeDocumentImmediately(
-                language: .python
-            )
-        )
-        XCTAssertFalse(
-            CodeSyntaxHighlighter.highlightsWholeDocumentImmediately(
-                language: .automatic
-            )
-        )
-    }
-
-    func testTreeSitterAppliesDifferentSwiftTokenColors() throws {
-        let source = "let value = \"Hello\""
-        let highlighter = try SwiftTreeSitterHighlighter()
-        let highlighted = try highlighter.attributedText(
-            source,
-            appearance: .dark
-        )
-        let nativeText = NSAttributedString(highlighted)
-        let keywordRange = (source as NSString).range(of: "let")
-        let stringRange = (source as NSString).range(of: "\"Hello\"")
-
-        let keywordColor = nativeText.attribute(
-            .foregroundColor,
-            at: keywordRange.location,
-            effectiveRange: nil
-        )
-        let stringColor = nativeText.attribute(
-            .foregroundColor,
-            at: stringRange.location,
-            effectiveRange: nil
-        )
-
-        XCTAssertNotNil(keywordColor)
-        XCTAssertNotNil(stringColor)
-        XCTAssertNotEqual(
-            keywordColor as? NSObject,
-            stringColor as? NSObject
-        )
-    }
-
-    func testNonSwiftLanguageUsesHighlightSwiftFallback() async throws {
-        let source = "def greet():\n    return \"Hello\""
+    func testTreeSitterHighlightsEveryPredefinedLanguage() async throws {
+        let samples: [(CodeLanguage, String)] = [
+            (.bash, "if true; then echo \"Hello\"; fi"),
+            (.c, "int main(void) { return 0; }"),
+            (.cPlusPlus, "std::string value = \"Hello\";"),
+            (.cSharp, "public class Greeter { }"),
+            (.css, ".title { color: red; }"),
+            (.go, "package main\nfunc main() {}"),
+            (.html, "<main>Hello</main>"),
+            (.java, "public class Greeter { }"),
+            (.javaScript, "const value = \"Hello\";"),
+            (.json, "{\"value\": true}"),
+            (.kotlin, "class Greeter { fun greet() = \"Hello\" }"),
+            (.markdown, "# Hello"),
+            (.objectiveC, "@interface Greeter : NSObject\n@end"),
+            (.php, "<?php echo \"Hello\"; ?>"),
+            (.python, "def greet():\n    return \"Hello\""),
+            (.ruby, "def greet\n  \"Hello\"\nend"),
+            (.rust, "fn main() { let value = \"Hello\"; }"),
+            (.shell, "if true; then echo \"Hello\"; fi"),
+            (.sql, "SELECT name FROM people;"),
+            (.swift, "let value = \"Hello\""),
+            (.typeScript, "const value: string = \"Hello\";"),
+            (.yaml, "enabled: true")
+        ]
         let highlighter = CodeSyntaxHighlighter()
-        let result = await highlighter.attributedText(
+
+        for (language, source) in samples {
+            let highlighted = await highlighter.attributedText(
+                source,
+                language: language,
+                appearance: .dark
+            )
+            let result = try XCTUnwrap(
+                highlighted,
+                "Failed to highlight \(language.identifier ?? "automatic")"
+            )
+            let nativeText = NSAttributedString(result)
+            var foundColor = false
+            nativeText.enumerateAttribute(
+                .foregroundColor,
+                in: NSRange(location: 0, length: nativeText.length)
+            ) { value, _, stop in
+                if value != nil {
+                    foundColor = true
+                    stop.pointee = true
+                }
+            }
+            XCTAssertTrue(
+                foundColor,
+                "No tokens highlighted for \(language.identifier ?? "automatic")"
+            )
+        }
+    }
+
+    func testAutomaticLanguageDetectionUsesTreeSitter() async throws {
+        let source = "{\"enabled\": true}"
+        let highlighter = CodeSyntaxHighlighter()
+        let highlighted = await highlighter.attributedText(
             source,
-            language: .python,
-            appearance: .dark
+            language: .automatic,
+            appearance: .light
         )
-        let highlighted = try XCTUnwrap(result)
-        let nativeText = NSAttributedString(highlighted)
-        let keywordRange = (nativeText.string as NSString).range(of: "def")
+        let result = try XCTUnwrap(highlighted)
+        let nativeText = NSAttributedString(result)
+        let booleanRange = (source as NSString).range(of: "true")
 
         XCTAssertNotNil(
             nativeText.attribute(
                 .foregroundColor,
-                at: keywordRange.location,
+                at: booleanRange.location,
+                effectiveRange: nil
+            )
+        )
+    }
+
+    func testUnknownLanguageReturnsPlainTextWithoutAnotherEngine() async throws {
+        let source = "some custom syntax"
+        let highlighter = CodeSyntaxHighlighter()
+        let highlighted = await highlighter.attributedText(
+            source,
+            language: "unknown-language",
+            appearance: .dark
+        )
+        let result = try XCTUnwrap(highlighted)
+        let nativeText = NSAttributedString(result)
+
+        XCTAssertEqual(nativeText.string, source)
+        XCTAssertNil(
+            nativeText.attribute(
+                .foregroundColor,
+                at: 0,
                 effectiveRange: nil
             )
         )

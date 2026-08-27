@@ -60,10 +60,9 @@ public final class CodeHighlightStore {
 
     /// Prepares highlighting for a source document.
     ///
-    /// Swift is prepared as a complete document with native Tree-sitter.
-    /// Other languages use HighlightSwift, preparing the first 80 logical
-    /// lines before completing the document. Calling this method again with
-    /// the same inputs reuses the existing result or task.
+    /// Every supported language is prepared as a complete document with
+    /// native Tree-sitter. Calling this method again with the same inputs
+    /// reuses the existing result or task.
     public func prepare(
         documentID: String,
         sourceCode: String,
@@ -80,63 +79,11 @@ public final class CodeHighlightStore {
 
         let highlighter = highlighter
 
-        if CodeSyntaxHighlighter.highlightsWholeDocumentImmediately(
-            language: key.language
-        ) {
-            let task: Task<AttributedString, Never>
-            if let existingTask = preparationTasks[key] {
-                task = existingTask
-            } else {
-                task = Task.detached(priority: .userInitiated) {
-                    await highlighter.attributedText(
-                        sourceCode,
-                        language: key.language,
-                        appearance: key.appearance
-                    ) ?? AttributedString(sourceCode)
-                }
-                preparationTasks[key] = task
-            }
-
-            let highlightedText = await withTaskCancellationHandler {
-                await task.value
-            } onCancel: {
-                task.cancel()
-            }
-            guard !Task.isCancelled else {
-                preparationTasks[key] = nil
-                return
-            }
-
-            snippets[key] = highlightedText
-            completedKeys.insert(key)
-            preparationTasks[key] = nil
-            return
-        }
-
-        if snippets[key] == nil {
-            let (leadingSource, remainingSource) = ProgressiveCodeHighlight
-                .splitLeadingLines(sourceCode)
-            let leadingText = await Task.detached(priority: .userInitiated) {
-                await highlightSource(
-                    leadingSource,
-                    language: key.language,
-                    appearance: key.appearance,
-                    using: highlighter
-                )
-            }.value
-
-            var stagedText = leadingText ?? AttributedString(leadingSource)
-            stagedText.append(AttributedString(remainingSource))
-            snippets[key] = stagedText
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-        }
-
         let task: Task<AttributedString, Never>
         if let existingTask = preparationTasks[key] {
             task = existingTask
         } else {
-            task = Task.detached(priority: .utility) {
+            task = Task.detached(priority: .userInitiated) {
                 await highlightSource(
                     sourceCode,
                     language: key.language,

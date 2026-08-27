@@ -1,12 +1,14 @@
 # Third-party notices
 
 CodeViewerKit depends on
-[HighlightSwift](https://github.com/appstefan/HighlightSwift), copyright 2023
-Stefan Britton, distributed under the following MIT License:
+[TreeSitterLanguages](https://github.com/simonbs/TreeSitterLanguages),
+copyright 2021 Simon Støvring, distributed under the following MIT License.
+The package includes the selected Tree-sitter grammar sources and highlighting
+queries credited in its acknowledgements:
 
 > MIT License
 >
-> Copyright (c) 2023 Stefan Britton
+> Copyright (c) 2021 Simon Støvring
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal
