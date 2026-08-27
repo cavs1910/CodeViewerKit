@@ -47,7 +47,7 @@ public final class CodeHighlightStore {
     public func isPrepared(
         documentID: String,
         sourceCode: String,
-        language: CodeLanguage = .swift,
+        language: CodeLanguage = .automatic,
         colorScheme: ColorScheme
     ) -> Bool {
         completedKeys.contains(
@@ -68,7 +68,7 @@ public final class CodeHighlightStore {
     public func prepare(
         documentID: String,
         sourceCode: String,
-        language: CodeLanguage = .swift,
+        language: CodeLanguage = .automatic,
         colorScheme: ColorScheme
     ) async {
         let key = key(

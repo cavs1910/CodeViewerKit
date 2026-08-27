@@ -16,20 +16,31 @@ enum CodeHighlightAppearance: Hashable, Sendable {
 
 actor CodeSyntaxHighlighter {
     private let specifications: [String: TreeSitterLanguageSpecification]
+    private let detectedSpecifications: [TreeSitterLanguageSpecification]
     private var highlighters = [String: TreeSitterCodeHighlighter]()
     private var failedLanguages = Set<String>()
 
     init(grammars: [CodeGrammar]) {
-        specifications = grammars.reduce(into: [:]) { result, grammar in
+        var specifications = [String: TreeSitterLanguageSpecification]()
+        var detectedSpecifications = [TreeSitterLanguageSpecification]()
+
+        for grammar in grammars {
             let specification = TreeSitterLanguageSpecification(
                 identifier: grammar.identifier,
                 language: grammar.language,
-                queryURLs: grammar.queryURLs
+                queryURLs: grammar.queryURLs,
+                detectsSource: grammar.detectsSource
             )
             for identifier in [grammar.identifier] + grammar.aliases {
-                result[Self.normalized(identifier)] = specification
+                specifications[Self.normalized(identifier)] = specification
+            }
+            if grammar.detectsSource != nil {
+                detectedSpecifications.append(specification)
             }
         }
+
+        self.specifications = specifications
+        self.detectedSpecifications = detectedSpecifications
     }
 
     func attributedText(
@@ -37,8 +48,15 @@ actor CodeSyntaxHighlighter {
         language: CodeLanguage,
         appearance: CodeHighlightAppearance
     ) -> AttributedString? {
-        let identifier = language.resolvedIdentifier(for: sourceCode)
-        guard let specification = specifications[Self.normalized(identifier)] else {
+        let specification: TreeSitterLanguageSpecification?
+        if let identifier = language.identifier {
+            specification = specifications[Self.normalized(identifier)]
+        } else {
+            specification = detectedSpecifications.first {
+                $0.detectsSource?(sourceCode) == true
+            }
+        }
+        guard let specification else {
             return AttributedString(sourceCode)
         }
         guard let highlighter = preparedHighlighter(for: specification) else {
@@ -134,6 +152,7 @@ struct TreeSitterLanguageSpecification {
     let identifier: String
     let language: OpaquePointer
     let queryURLs: [URL]
+    let detectsSource: (@Sendable (String) -> Bool)?
 }
 
 private extension Array where Element == Data {

@@ -45,7 +45,7 @@ public struct CodeViewer: View {
         documentID: String,
         sourceCode: String,
         highlightStore: CodeHighlightStore,
-        language: CodeLanguage = .swift,
+        language: CodeLanguage = .automatic,
         lineWrapping: CodeLineWrapping = .none,
         plainTextColor: Color? = nil
     ) {

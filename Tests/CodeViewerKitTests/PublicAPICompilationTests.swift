@@ -5,13 +5,13 @@ import XCTest
 @MainActor
 final class PublicAPICompilationTests: XCTestCase {
     func testPublicViewerSurfaceCanBeConstructed() {
-        let highlights = CodeHighlightStore(grammars: allTestGrammars)
+        let highlights = CodeHighlightStore(grammars: [])
 
         _ = CodeViewer(
             documentID: "example",
             sourceCode: "import SwiftUI",
             highlightStore: highlights,
-            language: .python,
+            language: "python",
             lineWrapping: .word,
             plainTextColor: .orange
         )
@@ -21,13 +21,13 @@ final class PublicAPICompilationTests: XCTestCase {
             highlights.isPrepared(
                 documentID: "example",
                 sourceCode: "import SwiftUI",
-                language: .python,
+                language: "python",
                 colorScheme: .light
             )
         )
 
         _ = CodeLanguage.automatic
-        _ = CodeLanguage.swift
+        _ = CodeLanguage("swift")
         _ = CodeLanguage("elixir")
         let _: CodeLanguage = "go"
     }

@@ -4,8 +4,8 @@ import XCTest
 
 final class CodeLanguageTests: XCTestCase {
     func testProvidesPredefinedCustomAndAutomaticLanguages() {
-        XCTAssertEqual(CodeLanguage.swift.identifier, "swift")
-        XCTAssertEqual(CodeLanguage.python.identifier, "python")
+        XCTAssertEqual(CodeLanguage("swift").identifier, "swift")
+        XCTAssertEqual(CodeLanguage("python").identifier, "python")
         XCTAssertEqual(CodeLanguage("elixir").identifier, "elixir")
 
         let literal: CodeLanguage = "go"
@@ -15,13 +15,13 @@ final class CodeLanguageTests: XCTestCase {
 
     @MainActor
     func testHighlightCacheSeparatesLanguages() async {
-        let store = CodeHighlightStore(grammars: allTestGrammars)
+        let store = CodeHighlightStore(grammars: [])
         let source = "let value = 1"
 
         await store.prepare(
             documentID: "sample",
             sourceCode: source,
-            language: .swift,
+            language: "swift",
             colorScheme: .dark
         )
 
@@ -29,7 +29,7 @@ final class CodeLanguageTests: XCTestCase {
             store.isPrepared(
                 documentID: "sample",
                 sourceCode: source,
-                language: .swift,
+                language: "swift",
                 colorScheme: .dark
             )
         )
@@ -37,7 +37,7 @@ final class CodeLanguageTests: XCTestCase {
             store.isPrepared(
                 documentID: "sample",
                 sourceCode: source,
-                language: .python,
+                language: "python",
                 colorScheme: .dark
             )
         )

@@ -4,8 +4,9 @@ All notable changes to CodeViewerKit are documented in this file.
 
 ## Unreleased
 
-- expose every Tree-sitter grammar as an independent SwiftPM language product
-  so applications compile and link only the languages they select;
+- make grammar registration public and remove the fixed language catalog from
+  the package, allowing applications to supply any current or future
+  Tree-sitter grammar without a CodeViewerKit release;
 - require callers to provide the selected `CodeGrammar` values when creating a
   `CodeHighlightStore`;
 - use native Tree-sitter parsing and direct attributed-string styling for every

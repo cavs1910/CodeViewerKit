@@ -11,7 +11,7 @@ viewport-based layout instead of rendering a complete document as one SwiftUI
 
 ## Features
 
-- native Tree-sitter highlighting for every supported language;
+- native Tree-sitter highlighting through consumer-supplied grammars;
 - appearance-aware plain text while highlighting is prepared;
 - logical line numbers that stay aligned when a source line wraps;
 - Menlo with a monospaced system fallback;
@@ -46,9 +46,8 @@ dependencies: [
 ]
 ```
 
-Add `CodeViewerKit` and only the language products your app needs to its target.
-For example, a Swift and JSON viewer uses `CodeViewerKitLanguageSwift` and
-`CodeViewerKitLanguageJSON`; unselected grammars are not linked into the app.
+Add `CodeViewerKit` plus the grammar packages your application chooses. CVK
+does not declare or bundle a language catalog.
 
 ## Usage
 
@@ -57,11 +56,18 @@ prepared documents survive navigation and avoids repeating highlighting work.
 
 ```swift
 import CodeViewerKit
-import CodeViewerKitLanguageSwift
 import SwiftUI
+import TreeSitterSwift
+import TreeSitterSwiftQueries
 
 struct ContentView: View {
-    @State private var highlights = CodeHighlightStore(grammars: [.swift])
+    @State private var highlights = CodeHighlightStore(grammars: [
+        CodeGrammar(
+            identifier: "swift",
+            language: tree_sitter_swift(),
+            queryURLs: [TreeSitterSwiftQueries.Query.highlightsFileURL]
+        )
+    ])
 
     private let source = """
     import SwiftUI
@@ -89,21 +95,29 @@ showing a different document so the viewer starts at the beginning.
 
 ### Languages
 
-Every grammar is opt-in at compile time. Import each selected language product
-and provide its grammar when creating the shared store:
+Every grammar is supplied by the consuming application at compile time. A
+convenient SwiftPM catalog is
+[TreeSitterLanguages](https://github.com/simonbs/TreeSitterLanguages), whose
+parsers and query libraries are separate products. CVK only needs the parser
+pointer, identifier, aliases, and highlight-query URLs:
 
 ```swift
 import CodeViewerKit
-import CodeViewerKitLanguageJavaScript
-import CodeViewerKitLanguageJSON
-import CodeViewerKitLanguagePython
-import CodeViewerKitLanguageSwift
-import CodeViewerKitLanguageTypeScript
+import TreeSitterJSON
+import TreeSitterJSONQueries
 
-let highlights = CodeHighlightStore(
-    grammars: [.swift, .json, .javaScript, .typeScript, .python]
+let jsonGrammar = CodeGrammar(
+    identifier: "json",
+    language: tree_sitter_json(),
+    queryURLs: [TreeSitterJSONQueries.Query.highlightsFileURL]
 )
+
+let highlights = CodeHighlightStore(grammars: [jsonGrammar])
 ```
+
+The catalog is optional. A new language can ship its generated Tree-sitter C
+parser and `.scm` queries in any Swift package and construct `CodeGrammar`
+through the same public initializer. No CodeViewerKit update is required.
 
 Pass an explicit linked Tree-sitter language in quotes, or use `.automatic`
 without quotes to detect a language from the source contents:
@@ -131,13 +145,9 @@ CodeViewer(
 )
 ```
 
-Available language products cover `"swift"`, `"python"`, `"javascript"`,
-`"typescript"`, `"json"`, `"html"`, `"css"`, `"bash"`, `"c"`, `"cpp"`,
-`"csharp"`, `"objectivec"`, `"java"`, `"kotlin"`, `"go"`, `"rust"`,
-`"ruby"`, `"php"`, `"shell"`, `"sql"`, `"markdown"`, and `"yaml"`.
-Common aliases such as `"js"`, `"ts"`, `"py"`, `"rb"`, `"sh"`, and `"yml"`
-are also accepted when their corresponding grammar is selected. Unknown or
-unlinked identifiers render as plain text without loading a second engine.
+Identifiers and aliases belong to the supplied `CodeGrammar`, so CVK places no
+limit on the available languages. Unknown or unregistered identifiers render
+as plain text without loading a second engine.
 
 Prefer an explicit language when it is known. Automatic detection performs
 additional work and can be ambiguous for short snippets.
@@ -206,16 +216,11 @@ the platform-specific selection and scrolling behavior.
 
 Highlighting is provided by
 [Tree-sitter](https://github.com/tree-sitter/tree-sitter) through
-[SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter) and the
-individually selectable offline grammars in
-[TreeSitterLanguages](https://github.com/simonbs/TreeSitterLanguages). Each
-language is exposed as a separate SwiftPM product, so consumers link only the
-grammars passed to `CodeHighlightStore`. The
-complete document is parsed away from the main actor and token colors are
+[SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter). Grammar
+ownership remains entirely outside CVK, so an application links only the
+external parsers it registers. The complete document is parsed away from the main actor and token colors are
 applied directly to the native attributed string without JavaScript or HTML
 conversion. Results are cached by document, contents, language, and appearance.
-Kotlin uses the Java grammar and Objective-C uses the C grammar as lightweight
-Tree-sitter approximations.
 
 ## Contributing
 
