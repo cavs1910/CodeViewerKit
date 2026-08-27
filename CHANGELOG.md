@@ -2,6 +2,11 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## 0.4.2 - 2026-08-27
+
+- resolve the complete macOS toolbar overlap when the native view joins its
+  window, then position a new document before its first visible frame.
+
 ## 0.4.1 - 2026-08-27
 
 - account for automatic macOS toolbar content insets when positioning a new

@@ -375,6 +375,7 @@ private final class MacCodeTextContainer: NSView {
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lineWrapping: CodeLineWrapping?
+    private var needsInitialScrollPosition = false
 
     override var isFlipped: Bool { true }
 
@@ -438,7 +439,23 @@ private final class MacCodeTextContainer: NSView {
         )
         gutterView.frame = frames.gutter
         scrollView.frame = frames.text
+        synchronizeToolbarInset()
+        if needsInitialScrollPosition, window != nil {
+            needsInitialScrollPosition = false
+            scrollView.contentView.scroll(
+                to: MacCodeScrollPosition.leadingOrigin(
+                    contentInsets: scrollView.contentInsets
+                )
+            )
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
         scheduleGutterUpdate()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        needsLayout = true
+        layoutSubtreeIfNeeded()
     }
 
     func update(_ request: CodeTextRenderRequest) {
@@ -460,6 +477,9 @@ private final class MacCodeTextContainer: NSView {
 
         if !update.change.isNewDocument {
             textView.selectedRanges = selectedRanges
+        } else {
+            needsInitialScrollPosition = true
+            needsLayout = true
         }
 
         layoutSubtreeIfNeeded()
@@ -471,6 +491,20 @@ private final class MacCodeTextContainer: NSView {
         scrollView.contentView.scroll(to: destination)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         scheduleGutterUpdate()
+    }
+
+    private func synchronizeToolbarInset() {
+        guard let window else { return }
+
+        let frameInWindow = convert(bounds, to: nil)
+        let topInset = max(
+            0,
+            frameInWindow.maxY - window.contentLayoutRect.maxY
+        )
+        guard abs(scrollView.contentInsets.top - topInset) > 0.5 else { return }
+
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets.top = topInset
     }
 
     private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {
