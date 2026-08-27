@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import CodeViewerKit
 
@@ -58,5 +59,33 @@ final class CodeTextCoreTests: XCTestCase {
         )
         XCTAssertEqual(frames.gutter, CGRect(x: 0, y: 0, width: 24, height: 80))
         XCTAssertEqual(frames.text, CGRect(x: 24, y: 0, width: 76, height: 80))
+    }
+
+    func testPlainTextStyleUsesAnAppearanceAwareDefault() {
+        XCTAssertEqual(
+            CodePlainTextStyle.resolve(configuredColor: nil, colorScheme: .light),
+            .black
+        )
+        XCTAssertEqual(
+            CodePlainTextStyle.resolve(configuredColor: nil, colorScheme: .dark),
+            .white
+        )
+        XCTAssertEqual(
+            CodePlainTextStyle.resolve(configuredColor: .orange, colorScheme: .dark),
+            .orange
+        )
+    }
+
+    func testPlainTextStyleDoesNotReplaceSyntaxColors() {
+        var text = AttributedString("plain highlighted")
+        let highlightedRange = text.range(of: "highlighted")!
+        text[highlightedRange].foregroundColor = .red
+
+        let styled = CodePlainTextStyle.apply(to: text, color: .white)
+        let runs = Array(styled.runs)
+
+        XCTAssertEqual(runs.count, 2)
+        XCTAssertEqual(runs[0].foregroundColor, .white)
+        XCTAssertEqual(runs[1].foregroundColor, .red)
     }
 }

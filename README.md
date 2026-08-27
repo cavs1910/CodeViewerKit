@@ -12,6 +12,7 @@ viewport-based layout instead of rendering a complete document as one SwiftUI
 ## Features
 
 - progressive Swift syntax highlighting with a fast plain-text first frame;
+- appearance-aware plain text while highlighting is prepared;
 - logical line numbers that stay aligned when a source line wraps;
 - Menlo with a monospaced system fallback;
 - native selection and horizontal and vertical scrolling;
@@ -85,13 +86,15 @@ showing a different document so the viewer starts at the beginning.
 
 The viewer is visually neutral: apply your own frame, padding, material, or
 Liquid Glass container around it. Indicator insets can be configured without
-moving the source text:
+moving the source text. Source ranges without a syntax color use black in light
+mode and white in dark mode; override that fallback with `plainTextColor`:
 
 ```swift
 CodeViewer(
     documentID: "example",
     sourceCode: source,
     highlightStore: highlights,
+    plainTextColor: .secondary,
     scrollIndicatorInsets: EdgeInsets(
         top: 8,
         leading: 0,

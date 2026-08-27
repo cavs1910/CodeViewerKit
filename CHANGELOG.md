@@ -2,6 +2,11 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## Unreleased
+
+- use an appearance-aware fallback color before progressive highlighting is
+  ready and allow callers to override it with `plainTextColor`;
+
 ## 0.1.0 - 2026-08-26
 
 Initial public release:
