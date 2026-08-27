@@ -2,7 +2,7 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
-## Unreleased
+## 0.6.1 - 2026-08-27
 
 - make grammar registration public and remove the fixed language catalog from
   the package, allowing applications to supply any current or future
