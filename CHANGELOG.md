@@ -2,6 +2,13 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## 0.3.0 - 2026-08-27
+
+- use native text-container padding and scroll indicators on iOS and iPadOS;
+- use the native legacy scroller style on macOS without custom tiling or inset
+  adjustments;
+- remove the `scrollIndicatorInsets` parameter from `CodeViewer`;
+
 ## 0.2.1 - 2026-08-26
 
 - apply the initial plain-text fallback as a native TextKit foreground color
