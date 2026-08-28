@@ -30,5 +30,14 @@ final class PublicAPICompilationTests: XCTestCase {
         _ = CodeLanguage("swift")
         _ = CodeLanguage("elixir")
         let _: CodeLanguage = "go"
+
+        let grammar = CodeGrammar(
+            identifier: "example",
+            aliases: ["example-file"],
+            language: OpaquePointer(bitPattern: 1)!,
+            queryURLs: []
+        )
+        XCTAssertEqual(grammar.identifier, "example")
+        XCTAssertEqual(grammar.aliases, ["example-file"])
     }
 }

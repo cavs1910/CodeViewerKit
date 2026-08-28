@@ -5,8 +5,11 @@ import Foundation
 /// Obtain a parser from any Tree-sitter grammar package, then pass its
 /// definition to ``CodeHighlightStore/init(grammars:)``.
 public struct CodeGrammar: @unchecked Sendable {
-    let identifier: String
-    let aliases: [String]
+    /// The canonical identifier consumers pass to ``CodeLanguage/init(_:)``.
+    public let identifier: String
+
+    /// Alternative identifiers, typically filename extensions.
+    public let aliases: [String]
     let language: OpaquePointer
     let queryURLs: [URL]
     let detectsSource: (@Sendable (String) -> Bool)?

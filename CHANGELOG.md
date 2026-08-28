@@ -2,6 +2,12 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## 0.6.4 - 2026-08-27
+
+- expose each registered grammar's canonical identifier and aliases so a
+  consumer can derive language selection and file-extension detection from
+  the same grammar catalog it links;
+
 ## 0.6.3 - 2026-08-27
 
 - preserve the visible source position when a macOS window resize changes the
