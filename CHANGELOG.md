@@ -2,7 +2,7 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
-## Unreleased
+## 0.6.6 - 2026-08-28
 
 - remove toolbar-underlap inset and resize compensation; consumers now keep
   the code view inside the platform safe area.
