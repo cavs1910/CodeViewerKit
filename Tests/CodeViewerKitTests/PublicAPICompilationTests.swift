@@ -13,6 +13,7 @@ final class PublicAPICompilationTests: XCTestCase {
             highlightStore: highlights,
             language: "python",
             lineWrapping: .word,
+            layoutPreparation: .automatic(maximumUTF16Length: 64_000),
             plainTextColor: .orange
         )
         _ = CodeViewerCommands()

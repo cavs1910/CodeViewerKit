@@ -6,9 +6,9 @@
 
 CodeViewerKit is a minimal, read-only source-code viewer for SwiftUI on iOS,
 iPadOS, and macOS. It uses native TextKit views for selection and scrolling,
-with viewport-based layout instead of rendering a complete document as one
-SwiftUI `Text` value. Noncontiguous layout keeps distant jumps through very
-large files responsive on every supported platform.
+with viewport-based layout by default instead of rendering a complete document
+as one SwiftUI `Text` value. Noncontiguous layout keeps distant jumps through
+very large files responsive on every supported platform.
 
 ## Features
 
@@ -18,7 +18,7 @@ large files responsive on every supported platform.
 - Menlo with a monospaced system fallback;
 - native selection and horizontal and vertical scrolling;
 - Command-Plus and Command-Minus font scaling;
-- sparse, viewport-driven layout on iOS, iPadOS, and macOS;
+- configurable progressive, complete, or size-adaptive native text layout;
 - shared highlighting cache for navigation-heavy apps.
 
 ## Requirements
@@ -169,6 +169,32 @@ CodeViewer(
 
 On macOS, each legacy scrollbar is hidden automatically when the content fits
 along its axis.
+
+### Layout preparation
+
+Layout is automatic by default: sources up to 64,000 UTF-16 code units receive
+complete layout, while larger sources remain progressive so distant jumps do
+not synchronously typeset every intervening line. Progressive layout can refine
+the scrollbar extent the first time a previously unlaid range becomes visible.
+
+Use complete layout when an exact initial scrollbar extent is more important
+than the up-front layout cost. Automatic mode lets the application choose that
+tradeoff by the source's UTF-16 length, which is the native `NSTextStorage`
+unit:
+
+```swift
+CodeViewer(
+    documentID: "adaptive-layout",
+    sourceCode: source,
+    highlightStore: highlights,
+    lineWrapping: .word,
+    layoutPreparation: .automatic(maximumUTF16Length: 64_000)
+)
+```
+
+Sources at or below the configured limit receive complete layout. Larger
+sources keep progressive, viewport-driven layout. Pass `.complete` or
+`.progressive` to select either behavior without a size threshold.
 
 The viewer is visually neutral: apply your own frame, material, or Liquid Glass
 container around it. Source ranges without a syntax color use black in light

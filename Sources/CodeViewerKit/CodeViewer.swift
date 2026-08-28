@@ -3,9 +3,9 @@ import SwiftUI
 /// A read-only source-code viewer backed by native TextKit views.
 ///
 /// `CodeViewer` provides syntax highlighting, logical line numbers, selection,
-/// native scrolling, and viewport-based layout on iOS, iPadOS, and macOS. The
-/// view does not provide its own background or outer decoration, so it can be
-/// embedded in the container that fits your app.
+/// native scrolling, and configurable layout preparation on iOS, iPadOS, and
+/// macOS. The view does not provide its own background or outer decoration, so
+/// it can be embedded in the container that fits your app.
 public struct CodeViewer: View {
     private struct HighlightRequest: Hashable {
         let documentID: String
@@ -19,6 +19,7 @@ public struct CodeViewer: View {
     private let highlightStore: CodeHighlightStore
     private let language: CodeLanguage
     private let lineWrapping: CodeLineWrapping
+    private let layoutPreparation: CodeLayoutPreparation
     private let plainTextColor: Color?
 
     @Environment(\.colorScheme) private var colorScheme
@@ -38,6 +39,10 @@ public struct CodeViewer: View {
     ///   - lineWrapping: How lines that exceed the viewer width are laid out.
     ///     The default keeps logical lines intact and allows horizontal
     ///     scrolling.
+    ///   - layoutPreparation: How much native text layout is prepared before
+    ///     scrolling. The default prepares complete layout up to
+    ///     ``CodeLayoutPreparation/defaultAutomaticMaximumUTF16Length`` and
+    ///     remains progressive above that threshold.
     ///   - plainTextColor: The color used for source ranges that do not yet
     ///     have a syntax color. Pass `nil` to use black in light mode and
     ///     white in dark mode.
@@ -47,6 +52,10 @@ public struct CodeViewer: View {
         highlightStore: CodeHighlightStore,
         language: CodeLanguage = .automatic,
         lineWrapping: CodeLineWrapping = .none,
+        layoutPreparation: CodeLayoutPreparation = .automatic(
+            maximumUTF16Length: CodeLayoutPreparation
+                .defaultAutomaticMaximumUTF16Length
+        ),
         plainTextColor: Color? = nil
     ) {
         self.documentID = documentID
@@ -54,6 +63,7 @@ public struct CodeViewer: View {
         self.highlightStore = highlightStore
         self.language = language
         self.lineWrapping = lineWrapping
+        self.layoutPreparation = layoutPreparation
         self.plainTextColor = plainTextColor
     }
 
@@ -73,6 +83,7 @@ public struct CodeViewer: View {
                 colorScheme: colorScheme
             ),
             lineWrapping: lineWrapping,
+            layoutPreparation: layoutPreparation,
             highlightLanguage: language,
             highlightAppearance: colorScheme == .dark ? .dark : .light,
             highlightBatches: snapshot.batches

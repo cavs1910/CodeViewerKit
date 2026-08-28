@@ -91,6 +91,86 @@ final class CodeTextCoreTests: XCTestCase {
         )
     }
 
+    func testLayoutPreparationResolvesConfiguredModesAndAutomaticLimit() {
+        XCTAssertEqual(
+            CodeLayoutPreparation.defaultAutomaticMaximumUTF16Length,
+            64_000
+        )
+        XCTAssertFalse(
+            CodeLayoutPreparation.progressive.preparesCompleteLayout(
+                forUTF16Length: 10
+            )
+        )
+        XCTAssertTrue(
+            CodeLayoutPreparation.complete.preparesCompleteLayout(
+                forUTF16Length: 1_000_000
+            )
+        )
+
+        let automatic = CodeLayoutPreparation.automatic(
+            maximumUTF16Length: 64_000
+        )
+        XCTAssertTrue(
+            automatic.preparesCompleteLayout(forUTF16Length: 64_000)
+        )
+        XCTAssertFalse(
+            automatic.preparesCompleteLayout(forUTF16Length: 64_001)
+        )
+        XCTAssertFalse(
+            CodeLayoutPreparation.automatic(maximumUTF16Length: -1)
+                .preparesCompleteLayout(forUTF16Length: 1)
+        )
+    }
+
+    #if os(macOS)
+    @MainActor
+    func testCompletePreparationFillsSparseTextKitLayout() throws {
+        let textView = CodeMacTextLayout.makeTextView()
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
+        let textContainer = try XCTUnwrap(textView.textContainer)
+        let text = String(repeating: "let value = 1\n", count: 500)
+
+        textView.textStorage?.setAttributedString(
+            NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(
+                        ofSize: 12,
+                        weight: .regular
+                    )
+                ]
+            )
+        )
+
+        XCTAssertTrue(
+            CodeNativeLayoutPreparation.prepare(
+                .automatic(maximumUTF16Length: 64_000),
+                layoutManager: layoutManager,
+                textContainer: textContainer
+            )
+        )
+        XCTAssertEqual(
+            layoutManager.firstUnlaidCharacterIndex(),
+            textView.textStorage?.length
+        )
+        XCTAssertFalse(layoutManager.hasNonContiguousLayout)
+
+        textView.textStorage?.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemRed,
+            range: NSRange(location: 0, length: 3)
+        )
+        XCTAssertTrue(layoutManager.hasNonContiguousLayout)
+
+        CodeNativeLayoutPreparation.prepare(
+            .complete,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        )
+        XCTAssertFalse(layoutManager.hasNonContiguousLayout)
+    }
+    #endif
+
     func testDocumentStateBuildsTheSharedLogicalLineIndex() {
         var state = CodeTextDocumentState()
 

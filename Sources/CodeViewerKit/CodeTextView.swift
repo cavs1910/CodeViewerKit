@@ -20,6 +20,7 @@ struct CodeTextView: View {
     let text: String
     let plainTextColor: Color
     let lineWrapping: CodeLineWrapping
+    let layoutPreparation: CodeLayoutPreparation
     let highlightLanguage: CodeLanguage
     let highlightAppearance: CodeHighlightAppearance
     let highlightBatches: [CodeHighlightBatch]
@@ -34,6 +35,7 @@ struct CodeTextView: View {
                 plainTextColor: plainTextColor,
                 fontSize: fontSize,
                 lineWrapping: lineWrapping,
+                layoutPreparation: layoutPreparation,
                 highlightLanguage: highlightLanguage,
                 highlightAppearance: highlightAppearance,
                 highlightBatches: highlightBatches
@@ -104,6 +106,7 @@ private struct CodeTextRenderRequest {
     let plainTextColor: Color
     let fontSize: CGFloat
     let lineWrapping: CodeLineWrapping
+    let layoutPreparation: CodeLayoutPreparation
     let highlightLanguage: CodeLanguage
     let highlightAppearance: CodeHighlightAppearance
     let highlightBatches: [CodeHighlightBatch]
@@ -327,6 +330,31 @@ private struct CodeTextPreparedUpdate {
     let lineCount: Int
 }
 
+private struct CodeCompleteLayoutKey: Equatable {
+    let generation: Int
+    let containerWidth: CGFloat
+}
+
+@MainActor
+enum CodeNativeLayoutPreparation {
+    @discardableResult
+    static func prepare(
+        _ preparation: CodeLayoutPreparation,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> Bool {
+        let textLength = layoutManager.textStorage?.length ?? 0
+        guard preparation.preparesCompleteLayout(
+            forUTF16Length: textLength
+        ) else { return false }
+
+        layoutManager.ensureLayout(
+            forCharacterRange: NSRange(location: 0, length: textLength)
+        )
+        return true
+    }
+}
+
 private extension CodeTextDocumentState {
     mutating func prepareUpdate(
         for request: CodeTextRenderRequest
@@ -454,6 +482,9 @@ private final class MacCodeTextContainer: NSView {
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
     private var lineWrapping: CodeLineWrapping?
+    private var layoutPreparation = CodeLayoutPreparation.progressive
+    private var layoutGeneration = 0
+    private var completeLayoutKey: CodeCompleteLayoutKey?
 
     override var isFlipped: Bool { true }
 
@@ -514,14 +545,17 @@ private final class MacCodeTextContainer: NSView {
         )
         gutterView.frame = frames.gutter
         scrollView.frame = frames.text
+        prepareCompleteLayoutIfNeeded()
         scheduleGutterUpdate()
     }
 
     func update(_ request: CodeTextRenderRequest) {
+        updateLayoutPreparation(request.layoutPreparation)
         updateLineWrapping(request.lineWrapping)
 
         guard let update = documentState.prepareUpdate(for: request) else {
             applyNewHighlightBatches(from: request)
+            prepareCompleteLayoutIfNeeded()
             scheduleGutterUpdate()
             return
         }
@@ -529,6 +563,8 @@ private final class MacCodeTextContainer: NSView {
         let visibleOrigin = scrollView.contentView.bounds.origin
         let selectedRanges = textView.selectedRanges
 
+        layoutGeneration &+= 1
+        completeLayoutKey = nil
         textView.textStorage?.setAttributedString(update.attributedText)
         lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
         gutterView.updateMetrics(
@@ -541,6 +577,7 @@ private final class MacCodeTextContainer: NSView {
         }
 
         layoutSubtreeIfNeeded()
+        prepareCompleteLayoutIfNeeded()
         let destination = update.change.isNewDocument
             ? CGPoint.zero
             : visibleOrigin
@@ -563,6 +600,7 @@ private final class MacCodeTextContainer: NSView {
             to: textStorage
         )
         textStorage.endEditing()
+        completeLayoutKey = nil
         lastAppliedHighlightSequence = batches.last?.sequence
             ?? lastAppliedHighlightSequence
     }
@@ -573,6 +611,7 @@ private final class MacCodeTextContainer: NSView {
         else { return }
 
         self.lineWrapping = lineWrapping
+        completeLayoutKey = nil
         textContainer.lineBreakMode = .byWordWrapping
 
         switch lineWrapping {
@@ -591,6 +630,45 @@ private final class MacCodeTextContainer: NSView {
         }
 
         textView.needsLayout = true
+    }
+
+    private func updateLayoutPreparation(
+        _ layoutPreparation: CodeLayoutPreparation
+    ) {
+        guard self.layoutPreparation != layoutPreparation else { return }
+        self.layoutPreparation = layoutPreparation
+        completeLayoutKey = nil
+    }
+
+    private func prepareCompleteLayoutIfNeeded() {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer
+        else { return }
+
+        let textLength = layoutManager.textStorage?.length ?? 0
+        guard layoutPreparation.preparesCompleteLayout(
+            forUTF16Length: textLength
+        ) else { return }
+
+        let containerWidth = lineWrapping == .word
+            ? scrollView.contentSize.width
+            : 0
+        guard lineWrapping != .word || containerWidth > 0 else { return }
+
+        let key = CodeCompleteLayoutKey(
+            generation: layoutGeneration,
+            containerWidth: containerWidth
+        )
+        guard key != completeLayoutKey else { return }
+        completeLayoutKey = key
+
+        CodeNativeLayoutPreparation.prepare(
+            layoutPreparation,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        )
+        textView.layoutSubtreeIfNeeded()
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     @objc private func clipViewBoundsDidChange() {
@@ -689,6 +767,9 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
     private var lineWrapping: CodeLineWrapping?
+    private var layoutPreparation = CodeLayoutPreparation.progressive
+    private var layoutGeneration = 0
+    private var completeLayoutKey: CodeCompleteLayoutKey?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -718,14 +799,17 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         )
         gutterView.frame = frames.gutter
         textView.frame = frames.text
+        prepareCompleteLayoutIfNeeded()
         scheduleGutterUpdate()
     }
 
     func update(_ request: CodeTextRenderRequest) {
+        updateLayoutPreparation(request.layoutPreparation)
         updateLineWrapping(request.lineWrapping)
 
         guard let update = documentState.prepareUpdate(for: request) else {
             applyNewHighlightBatches(from: request)
+            prepareCompleteLayoutIfNeeded()
             scheduleGutterUpdate()
             return
         }
@@ -733,6 +817,8 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         let contentOffset = textView.contentOffset
         let selectedRange = textView.selectedRange
 
+        layoutGeneration &+= 1
+        completeLayoutKey = nil
         textView.textStorage.setAttributedString(update.attributedText)
         lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
         gutterView.updateMetrics(
@@ -745,6 +831,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         }
 
         layoutIfNeeded()
+        prepareCompleteLayoutIfNeeded()
         textView.setContentOffset(
             update.change.isNewDocument ? .zero : contentOffset,
             animated: false
@@ -765,6 +852,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
             to: textView.textStorage
         )
         textView.textStorage.endEditing()
+        completeLayoutKey = nil
         lastAppliedHighlightSequence = batches.last?.sequence
             ?? lastAppliedHighlightSequence
     }
@@ -773,6 +861,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         guard self.lineWrapping != lineWrapping else { return }
 
         self.lineWrapping = lineWrapping
+        completeLayoutKey = nil
         textView.textContainer.lineBreakMode = .byWordWrapping
         textView.textContainer.widthTracksTextView = lineWrapping == .word
 
@@ -784,6 +873,42 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         }
 
         textView.setNeedsLayout()
+    }
+
+    private func updateLayoutPreparation(
+        _ layoutPreparation: CodeLayoutPreparation
+    ) {
+        guard self.layoutPreparation != layoutPreparation else { return }
+        self.layoutPreparation = layoutPreparation
+        completeLayoutKey = nil
+    }
+
+    private func prepareCompleteLayoutIfNeeded() {
+        let textLength = textView.textStorage.length
+        guard layoutPreparation.preparesCompleteLayout(
+            forUTF16Length: textLength
+        ) else { return }
+
+        let containerWidth = lineWrapping == .word
+            ? textView.bounds.width
+            : 0
+        guard lineWrapping != .word || containerWidth > 0 else { return }
+
+        let key = CodeCompleteLayoutKey(
+            generation: layoutGeneration,
+            containerWidth: containerWidth
+        )
+        guard key != completeLayoutKey else { return }
+        completeLayoutKey = key
+
+        textView.layoutIfNeeded()
+        CodeNativeLayoutPreparation.prepare(
+            layoutPreparation,
+            layoutManager: textView.layoutManager,
+            textContainer: textView.textContainer
+        )
+        textView.setNeedsLayout()
+        textView.layoutIfNeeded()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
