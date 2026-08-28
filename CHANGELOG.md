@@ -5,9 +5,9 @@ All notable changes to CodeViewerKit are documented in this file.
 ## Unreleased
 
 - publish Tree-sitter highlighting progressively in document-order batches;
-- keep the native text and scroll position stable while each new batch applies.
-- defer gutter, highlight, and layout-prewarming work during live scrolling,
-  then coalesce it at the final visible position.
+- keep the native text and scroll position stable while each new batch applies;
+- use noncontiguous TextKit layout on macOS so distant scrollbar jumps do not
+  synchronously lay out the intervening contents.
 
 ## 0.6.6 - 2026-08-28
 

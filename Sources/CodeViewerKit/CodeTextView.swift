@@ -254,22 +254,18 @@ private struct CodeGutterRenderer {
 
 @MainActor
 private final class CodeGutterUpdateCoordinator {
-    private var scheduledTask: Task<Void, Never>?
+    private var updateScheduled = false
     private var isUpdating = false
 
     func schedule(_ update: @escaping @MainActor () -> Void) {
-        guard scheduledTask == nil else { return }
+        guard !updateScheduled else { return }
+        updateScheduled = true
 
-        scheduledTask = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            scheduledTask = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            updateScheduled = false
             update()
         }
-    }
-
-    func cancelScheduledUpdate() {
-        scheduledTask?.cancel()
-        scheduledTask = nil
     }
 
     func perform(_ update: () -> Void) {
@@ -277,33 +273,6 @@ private final class CodeGutterUpdateCoordinator {
         isUpdating = true
         defer { isUpdating = false }
         update()
-    }
-}
-
-enum CodeLiveScrollWork: Hashable {
-    case gutter
-    case highlights
-    case layoutPrewarming
-}
-
-struct CodeLiveScrollWorkState {
-    private(set) var isActive = false
-    private var deferredWork: Set<CodeLiveScrollWork> = []
-
-    mutating func begin() {
-        isActive = true
-    }
-
-    mutating func shouldPerform(_ work: CodeLiveScrollWork) -> Bool {
-        guard isActive else { return true }
-        deferredWork.insert(work)
-        return false
-    }
-
-    mutating func finish() -> Set<CodeLiveScrollWork> {
-        isActive = false
-        defer { deferredWork.removeAll(keepingCapacity: true) }
-        return deferredWork
     }
 }
 
@@ -449,6 +418,22 @@ enum CodeNativeHighlighting {
 
 #if os(macOS)
 
+@MainActor
+enum CodeMacTextLayout {
+    static func makeTextView() -> NSTextView {
+        let textView = NSTextView(usingTextLayoutManager: false)
+        guard let layoutManager = textView.layoutManager else {
+            preconditionFailure("CodeTextView requires a TextKit layout manager")
+        }
+
+        // Sparse layout keeps distant thumb jumps from synchronously
+        // typesetting every intervening line on the main thread.
+        layoutManager.allowsNonContiguousLayout = true
+        layoutManager.backgroundLayoutEnabled = false
+        return textView
+    }
+}
+
 private struct PlatformCodeTextView: NSViewRepresentable {
     static let defaultFontSize = NSFont.systemFontSize(for: .small)
 
@@ -471,20 +456,13 @@ private final class MacCodeTextContainer: NSView {
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
-    private var liveScrollState = CodeLiveScrollWorkState()
-    private var liveScrollSettlingTask: Task<Void, Never>?
-    private var isNativeLiveScrollActive = false
-    private var deferredHighlightRequest: CodeTextRenderRequest?
     private var lineWrapping: CodeLineWrapping?
 
     override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
         let scrollView = NSScrollView()
-        let textView = NSTextView(frame: .zero)
-        guard textView.textLayoutManager != nil else {
-            preconditionFailure("CodeTextView requires TextKit 2")
-        }
+        let textView = CodeMacTextLayout.makeTextView()
 
         self.scrollView = scrollView
         self.textView = textView
@@ -519,24 +497,6 @@ private final class MacCodeTextContainer: NSView {
             name: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
         )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(scrollViewWillStartLiveScroll),
-            name: NSScrollView.willStartLiveScrollNotification,
-            object: scrollView
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(scrollViewDidLiveScroll),
-            name: NSScrollView.didLiveScrollNotification,
-            object: scrollView
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(scrollViewDidEndLiveScroll),
-            name: NSScrollView.didEndLiveScrollNotification,
-            object: scrollView
-        )
     }
 
     @available(*, unavailable)
@@ -545,7 +505,6 @@ private final class MacCodeTextContainer: NSView {
     }
 
     deinit {
-        liveScrollSettlingTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -565,11 +524,7 @@ private final class MacCodeTextContainer: NSView {
         updateLineWrapping(request.lineWrapping)
 
         guard let update = documentState.prepareUpdate(for: request) else {
-            if liveScrollState.shouldPerform(.highlights) {
-                applyNewHighlightBatches(from: request)
-            } else {
-                deferredHighlightRequest = request
-            }
+            applyNewHighlightBatches(from: request)
             scheduleGutterUpdate()
             return
         }
@@ -579,7 +534,6 @@ private final class MacCodeTextContainer: NSView {
 
         textView.textStorage?.setAttributedString(update.attributedText)
         lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
-        deferredHighlightRequest = nil
         gutterView.updateMetrics(
             lineCount: update.lineCount,
             font: update.font
@@ -646,60 +600,7 @@ private final class MacCodeTextContainer: NSView {
         scheduleGutterUpdate()
     }
 
-    @objc private func scrollViewWillStartLiveScroll(_ notification: Notification) {
-        isNativeLiveScrollActive = true
-        beginLiveScroll()
-    }
-
-    @objc private func scrollViewDidLiveScroll(_ notification: Notification) {
-        beginLiveScroll()
-        if !isNativeLiveScrollActive {
-            scheduleLiveScrollFinish()
-        }
-    }
-
-    @objc private func scrollViewDidEndLiveScroll(_ notification: Notification) {
-        isNativeLiveScrollActive = false
-        scheduleLiveScrollFinish()
-    }
-
-    private func beginLiveScroll() {
-        liveScrollSettlingTask?.cancel()
-        liveScrollSettlingTask = nil
-        guard !liveScrollState.isActive else { return }
-
-        liveScrollState.begin()
-        _ = liveScrollState.shouldPerform(.gutter)
-        gutterUpdates.cancelScheduledUpdate()
-    }
-
-    private func scheduleLiveScrollFinish() {
-        liveScrollSettlingTask?.cancel()
-        liveScrollSettlingTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(100))
-            guard let self, !Task.isCancelled else { return }
-            liveScrollSettlingTask = nil
-            finishLiveScroll()
-        }
-    }
-
-    private func finishLiveScroll() {
-        liveScrollSettlingTask?.cancel()
-        liveScrollSettlingTask = nil
-        let deferredWork = liveScrollState.finish()
-
-        if deferredWork.contains(.highlights),
-           let deferredHighlightRequest {
-            self.deferredHighlightRequest = nil
-            applyNewHighlightBatches(from: deferredHighlightRequest)
-        }
-        if deferredWork.contains(.gutter) {
-            scheduleGutterUpdate()
-        }
-    }
-
     private func scheduleGutterUpdate() {
-        guard liveScrollState.shouldPerform(.gutter) else { return }
         gutterUpdates.schedule { [weak self] in
             self?.updateGutter()
         }
@@ -707,14 +608,16 @@ private final class MacCodeTextContainer: NSView {
 
     private func updateGutter() {
         gutterUpdates.perform { [self] in
-            guard let textLayoutManager = textView.textLayoutManager else { return }
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer
+            else { return }
 
-            textLayoutManager.textViewportLayoutController.layoutViewport()
             gutterView.updateMarkers(
                 CodeLineLayout.visibleMarkers(
-                    textLayoutManager: textLayoutManager,
+                    layoutManager: layoutManager,
+                    textContainer: textContainer,
                     visibleBounds: scrollView.contentView.bounds,
-                    textContainerTopInset: textView.textContainerInset.height,
+                    textContainerOrigin: textView.textContainerOrigin,
                     lineIndex: documentState.lineIndex
                 )
             )
@@ -775,11 +678,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
-    private var liveScrollState = CodeLiveScrollWorkState()
-    private var deferredHighlightRequest: CodeTextRenderRequest?
-    private var latestRequest: CodeTextRenderRequest?
     private var layoutPrewarmingTask: Task<Void, Never>?
-    private var prewarmingContent: String?
     private var prewarmedContent: String?
     private var lineWrapping: CodeLineWrapping?
 
@@ -820,18 +719,13 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     }
 
     func update(_ request: CodeTextRenderRequest) {
-        latestRequest = request
         updateLineWrapping(request.lineWrapping)
 
         let fontSizeChanged = documentState.fontSize != request.fontSize
         let needsLayoutPrewarming = request.prewarmsLayout
             && (prewarmedContent != request.text || fontSizeChanged)
         guard let update = documentState.prepareUpdate(for: request) else {
-            if liveScrollState.shouldPerform(.highlights) {
-                applyNewHighlightBatches(from: request)
-            } else {
-                deferredHighlightRequest = request
-            }
+            applyNewHighlightBatches(from: request)
             if needsLayoutPrewarming {
                 scheduleLayoutPrewarming(
                     for: request.text,
@@ -843,15 +737,12 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         }
 
         layoutPrewarmingTask?.cancel()
-        layoutPrewarmingTask = nil
-        prewarmingContent = nil
         prewarmedContent = nil
         let contentOffset = textView.contentOffset
         let selectedRange = textView.selectedRange
 
         textView.textStorage.setAttributedString(update.attributedText)
         lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
-        deferredHighlightRequest = nil
         gutterView.updateMetrics(
             lineCount: update.lineCount,
             font: update.font
@@ -913,61 +804,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         scheduleGutterUpdate()
     }
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        beginLiveScroll()
-    }
-
-    func scrollViewDidEndDragging(
-        _ scrollView: UIScrollView,
-        willDecelerate decelerate: Bool
-    ) {
-        if !decelerate {
-            finishLiveScroll()
-        }
-    }
-
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        finishLiveScroll()
-    }
-
-    private func beginLiveScroll() {
-        guard !liveScrollState.isActive else { return }
-
-        liveScrollState.begin()
-        _ = liveScrollState.shouldPerform(.gutter)
-        gutterUpdates.cancelScheduledUpdate()
-
-        if layoutPrewarmingTask != nil {
-            layoutPrewarmingTask?.cancel()
-            layoutPrewarmingTask = nil
-            prewarmingContent = nil
-            _ = liveScrollState.shouldPerform(.layoutPrewarming)
-        }
-    }
-
-    private func finishLiveScroll() {
-        let deferredWork = liveScrollState.finish()
-
-        if deferredWork.contains(.highlights),
-           let deferredHighlightRequest {
-            self.deferredHighlightRequest = nil
-            applyNewHighlightBatches(from: deferredHighlightRequest)
-        }
-        if deferredWork.contains(.gutter) {
-            scheduleGutterUpdate()
-        }
-        if deferredWork.contains(.layoutPrewarming),
-           let latestRequest,
-           latestRequest.prewarmsLayout {
-            scheduleLayoutPrewarming(
-                for: latestRequest.text,
-                fontSize: latestRequest.fontSize
-            )
-        }
-    }
-
     private func scheduleGutterUpdate() {
-        guard liveScrollState.shouldPerform(.gutter) else { return }
         gutterUpdates.schedule { [weak self] in
             self?.updateGutter()
         }
@@ -993,19 +830,14 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         for text: String,
         fontSize: CGFloat
     ) {
-        guard prewarmedContent != text, prewarmingContent != text else { return }
-        guard liveScrollState.shouldPerform(.layoutPrewarming) else { return }
+        guard prewarmedContent != text else { return }
 
         layoutPrewarmingTask?.cancel()
-        prewarmingContent = text
+        prewarmedContent = text
         layoutPrewarmingTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
             await prewarmTextLayout(fontSize: fontSize)
-            guard !Task.isCancelled else { return }
-            prewarmedContent = text
-            prewarmingContent = nil
-            layoutPrewarmingTask = nil
         }
     }
 
@@ -1102,6 +934,14 @@ struct CodeLineIndex {
     var count: Int { starts.count }
 
     func lineNumber(containing offset: Int) -> Int {
+        lineIndex(containing: offset) + 1
+    }
+
+    func isLineStart(_ offset: Int) -> Bool {
+        starts[lineIndex(containing: offset)] == offset
+    }
+
+    private func lineIndex(containing offset: Int) -> Int {
         var lowerBound = 0
         var upperBound = starts.count
 
@@ -1113,12 +953,89 @@ struct CodeLineIndex {
                 upperBound = middle
             }
         }
-        return max(1, lowerBound)
+        return max(0, lowerBound - 1)
     }
 }
 
 @MainActor
 private enum CodeLineLayout {
+#if os(macOS)
+    static func visibleMarkers(
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer,
+        visibleBounds: CGRect,
+        textContainerOrigin: CGPoint,
+        lineIndex: CodeLineIndex
+    ) -> [CodeLineMarker] {
+        let textLength = layoutManager.textStorage?.length ?? 0
+        guard textLength > 0 else {
+            return [
+                CodeLineMarker(
+                    number: 1,
+                    verticalPosition: textContainerOrigin.y - visibleBounds.minY
+                )
+            ]
+        }
+
+        let layoutBounds = CGRect(
+            x: 0,
+            y: max(0, visibleBounds.minY - textContainerOrigin.y),
+            width: max(1, visibleBounds.width),
+            height: visibleBounds.height + textContainerOrigin.y
+        )
+        layoutManager.ensureLayout(forBoundingRect: layoutBounds, in: textContainer)
+        let glyphRange = layoutManager.glyphRange(
+            forBoundingRectWithoutAdditionalLayout: layoutBounds,
+            in: textContainer
+        )
+
+        var markers: [CodeLineMarker] = []
+        var reachedDocumentEnd = false
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
+            _, usedRect, _, lineGlyphRange, _ in
+            let characterRange = layoutManager.characterRange(
+                forGlyphRange: lineGlyphRange,
+                actualGlyphRange: nil
+            )
+            reachedDocumentEnd = NSMaxRange(characterRange) >= textLength
+            guard lineIndex.isLineStart(characterRange.location) else { return }
+
+            let verticalPosition = textContainerOrigin.y
+                + usedRect.minY
+                - visibleBounds.minY
+            guard verticalPosition >= -usedRect.height,
+                  verticalPosition <= visibleBounds.height
+            else { return }
+
+            markers.append(
+                CodeLineMarker(
+                    number: lineIndex.lineNumber(containing: characterRange.location),
+                    verticalPosition: verticalPosition
+                )
+            )
+        }
+
+        if reachedDocumentEnd {
+            let extraLineRect = layoutManager.extraLineFragmentUsedRect
+            let verticalPosition = textContainerOrigin.y
+                + extraLineRect.minY
+                - visibleBounds.minY
+            if !extraLineRect.isEmpty,
+               verticalPosition >= -extraLineRect.height,
+               verticalPosition <= visibleBounds.height {
+                markers.append(
+                    CodeLineMarker(
+                        number: lineIndex.count,
+                        verticalPosition: verticalPosition
+                    )
+                )
+            }
+        }
+
+        return markers
+    }
+#endif
+
     static func visibleMarkers(
         textLayoutManager: NSTextLayoutManager,
         visibleBounds: CGRect,

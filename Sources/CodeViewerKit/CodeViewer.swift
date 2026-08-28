@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A read-only source-code viewer backed by TextKit 2.
+/// A read-only source-code viewer backed by native TextKit views.
 ///
 /// `CodeViewer` provides syntax highlighting, logical line numbers, selection,
 /// native scrolling, and viewport-based layout on iOS, iPadOS, and macOS. The

@@ -15,4 +15,14 @@ final class CodeLineIndexTests: XCTestCase {
         XCTAssertEqual(index.lineNumber(containing: 4), 2)
         XCTAssertEqual(index.lineNumber(containing: 8), 3)
     }
+
+    func testIdentifiesOnlyLogicalLineStarts() {
+        let index = CodeLineIndex(text: "one\ntwo\nthree")
+
+        XCTAssertTrue(index.isLineStart(0))
+        XCTAssertTrue(index.isLineStart(4))
+        XCTAssertTrue(index.isLineStart(8))
+        XCTAssertFalse(index.isLineStart(1))
+        XCTAssertFalse(index.isLineStart(7))
+    }
 }

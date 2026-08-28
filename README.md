@@ -5,9 +5,10 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 CodeViewerKit is a minimal, read-only source-code viewer for SwiftUI on iOS,
-iPadOS, and macOS. It uses TextKit 2 for native selection, scrolling, and
-viewport-based layout instead of rendering a complete document as one SwiftUI
-`Text` value.
+iPadOS, and macOS. It uses native TextKit views for selection and scrolling,
+with viewport-based layout instead of rendering a complete document as one
+SwiftUI `Text` value. On macOS, noncontiguous layout keeps distant jumps
+through very large files responsive.
 
 ## Features
 
@@ -211,7 +212,7 @@ current scope.
 
 The shared renderer core owns document updates, Menlo styling, logical line
 indexing, gutter geometry, visible marker resolution, and coalesced redraws.
-Small AppKit and UIKit adapters configure the native TextKit 2 views and handle
+Small AppKit and UIKit adapters configure the native TextKit views and handle
 the platform-specific selection and scrolling behavior.
 
 Highlighting is provided by

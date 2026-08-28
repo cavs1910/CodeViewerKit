@@ -7,30 +7,17 @@ import AppKit
 #endif
 
 final class CodeTextCoreTests: XCTestCase {
-    func testLiveScrollWorkRunsImmediatelyWhileIdle() {
-        var state = CodeLiveScrollWorkState()
+    #if os(macOS)
+    @MainActor
+    func testMacTextViewUsesNoncontiguousLayout() throws {
+        let textView = CodeMacTextLayout.makeTextView()
+        let layoutManager = try XCTUnwrap(textView.layoutManager)
 
-        XCTAssertTrue(state.shouldPerform(.gutter))
-        XCTAssertTrue(state.shouldPerform(.highlights))
-        XCTAssertTrue(state.shouldPerform(.layoutPrewarming))
+        XCTAssertNil(textView.textLayoutManager)
+        XCTAssertTrue(layoutManager.allowsNonContiguousLayout)
+        XCTAssertFalse(layoutManager.backgroundLayoutEnabled)
     }
-
-    func testLiveScrollWorkIsCoalescedUntilScrollingFinishes() {
-        var state = CodeLiveScrollWorkState()
-
-        state.begin()
-
-        XCTAssertFalse(state.shouldPerform(.gutter))
-        XCTAssertFalse(state.shouldPerform(.gutter))
-        XCTAssertFalse(state.shouldPerform(.highlights))
-        XCTAssertFalse(state.shouldPerform(.layoutPrewarming))
-        XCTAssertEqual(
-            state.finish(),
-            Set([.gutter, .highlights, .layoutPrewarming])
-        )
-        XCTAssertTrue(state.shouldPerform(.gutter))
-        XCTAssertTrue(state.finish().isEmpty)
-    }
+    #endif
 
     func testDocumentStateClassifiesUpdatesAndNewDocuments() throws {
         var state = CodeTextDocumentState()
