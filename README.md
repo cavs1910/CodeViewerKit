@@ -11,7 +11,7 @@ viewport-based layout instead of rendering a complete document as one SwiftUI
 
 ## Features
 
-- native Tree-sitter highlighting through consumer-supplied grammars;
+- progressive native Tree-sitter highlighting through consumer-supplied grammars;
 - appearance-aware plain text while highlighting is prepared;
 - logical line numbers that stay aligned when a source line wraps;
 - Menlo with a monospaced system fallback;
@@ -218,9 +218,11 @@ Highlighting is provided by
 [Tree-sitter](https://github.com/tree-sitter/tree-sitter) through
 [SwiftTreeSitter](https://github.com/tree-sitter/swift-tree-sitter). Grammar
 ownership remains entirely outside CVK, so an application links only the
-external parsers it registers. The complete document is parsed away from the main actor and token colors are
-applied directly to the native attributed string without JavaScript or HTML
-conversion. Results are cached by document, contents, language, and appearance.
+external parsers it registers. The complete document is parsed away from the
+main actor, then token colors are queried and applied progressively from the
+start of the native attributed string. Each batch updates only its own ranges,
+without replacing the text or changing the current scroll position. Results
+are cached by document, contents, language, and appearance.
 
 ## Contributing
 

@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// Create one store at a stable ownership boundary and pass it to each
 /// ``CodeViewer`` that should share prepared documents. Replacing the store
-/// releases the cached source and highlighting results.
+/// releases the cached source and progressive highlighting results.
 @Observable @MainActor
 public final class CodeHighlightStore {
     private struct Key: Hashable, Sendable {
@@ -13,34 +13,51 @@ public final class CodeHighlightStore {
         let sourceCode: String
         let language: CodeLanguage
         let appearance: CodeHighlightAppearance
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(documentID)
+            hasher.combine(sourceCode.utf16.count)
+            hasher.combine(language)
+            hasher.combine(appearance)
+        }
+    }
+
+    private final class Entry {
+        var batches: [CodeHighlightBatch] = []
+        var isPrepared = false
     }
 
     private let highlighter: CodeSyntaxHighlighter
-    private var snippets = [Key: AttributedString]()
-    private var completedKeys = Set<Key>()
-    private var preparationTasks = [Key: Task<AttributedString, Never>]()
+    @ObservationIgnored private var entries = [Key: Entry]()
+    @ObservationIgnored private var preparationTasks = [Key: Task<Bool, Never>]()
+    private var revision = 0
 
     /// Creates an empty highlighting cache using the linked grammars.
     public init(grammars: [CodeGrammar]) {
         highlighter = CodeSyntaxHighlighter(grammars: grammars)
     }
 
-    func displayedCode(
+    func snapshot(
         documentID: String,
         sourceCode: String,
         language: CodeLanguage,
         colorScheme: ColorScheme
-    ) -> AttributedString {
+    ) -> CodeHighlightSnapshot {
+        _ = revision
         let key = key(
             documentID: documentID,
             sourceCode: sourceCode,
             language: language,
             colorScheme: colorScheme
         )
-        return snippets[key] ?? AttributedString(sourceCode)
+        let entry = entries[key]
+        return CodeHighlightSnapshot(
+            batches: entry?.batches ?? [],
+            isPrepared: entry?.isPrepared ?? false
+        )
     }
 
-    /// Returns whether the complete highlighted representation is cached.
+    /// Returns whether all highlighting batches are cached.
     ///
     /// The document identity, source contents, language, and color scheme all
     /// participate in the cache key.
@@ -50,21 +67,23 @@ public final class CodeHighlightStore {
         language: CodeLanguage = .automatic,
         colorScheme: ColorScheme
     ) -> Bool {
-        completedKeys.contains(
+        _ = revision
+        return entries[
             key(
                 documentID: documentID,
                 sourceCode: sourceCode,
                 language: language,
                 colorScheme: colorScheme
             )
-        )
+        ]?.isPrepared ?? false
     }
 
     /// Prepares highlighting for a source document.
     ///
-    /// Every supported language is prepared as a complete document with
-    /// native Tree-sitter. Calling this method again with the same inputs
-    /// reuses the existing result or task.
+    /// Tree-sitter parses the document away from the main actor, then query
+    /// results are published progressively from the start of the document.
+    /// Calling this method again with the same inputs reuses the existing
+    /// batches and task.
     public func prepare(
         documentID: String,
         sourceCode: String,
@@ -77,37 +96,42 @@ public final class CodeHighlightStore {
             language: language,
             colorScheme: colorScheme
         )
-        guard !completedKeys.contains(key) else { return }
+        guard entries[key]?.isPrepared != true else { return }
 
         let highlighter = highlighter
 
-        let task: Task<AttributedString, Never>
+        let task: Task<Bool, Never>
         if let existingTask = preparationTasks[key] {
             task = existingTask
         } else {
-            task = Task.detached(priority: .userInitiated) {
-                await highlightSource(
+            task = Task { [weak self] in
+                let stream = await highlighter.highlightedBatches(
                     sourceCode,
-                    language: key.language,
-                    appearance: key.appearance,
-                    using: highlighter
-                ) ?? AttributedString(sourceCode)
+                    language: key.language
+                )
+                for await batch in stream {
+                    guard !Task.isCancelled else { return false }
+                    self?.record(batch, for: key)
+                }
+                return !Task.isCancelled
             }
             preparationTasks[key] = task
         }
 
-        let highlightedText = await withTaskCancellationHandler {
+        let completed = await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
         }
-        guard !Task.isCancelled else {
+        guard completed, !Task.isCancelled else {
             preparationTasks[key] = nil
             return
         }
 
-        snippets[key] = highlightedText
-        completedKeys.insert(key)
+        let entry = entries[key] ?? Entry()
+        entry.isPrepared = true
+        entries[key] = entry
+        revision &+= 1
         preparationTasks[key] = nil
     }
 
@@ -124,17 +148,12 @@ public final class CodeHighlightStore {
             appearance: colorScheme == .dark ? .dark : .light
         )
     }
-}
 
-private func highlightSource(
-    _ sourceCode: String,
-    language: CodeLanguage,
-    appearance: CodeHighlightAppearance,
-    using highlighter: CodeSyntaxHighlighter
-) async -> AttributedString? {
-    return await highlighter.attributedText(
-        sourceCode,
-        language: language,
-        appearance: appearance
-    )
+    private func record(_ batch: CodeHighlightBatch, for key: Key) {
+        let entry = entries[key] ?? Entry()
+        guard batch.sequence == entry.batches.count else { return }
+        entry.batches.append(batch)
+        entries[key] = entry
+        revision &+= 1
+    }
 }

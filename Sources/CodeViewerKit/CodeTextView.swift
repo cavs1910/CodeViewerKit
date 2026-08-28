@@ -17,9 +17,12 @@ struct CodeTextView: View {
     static let fontSizeStep: CGFloat = 1
 
     let documentID: String
-    let text: AttributedString
+    let text: String
     let plainTextColor: Color
     let lineWrapping: CodeLineWrapping
+    let highlightLanguage: CodeLanguage
+    let highlightAppearance: CodeHighlightAppearance
+    let highlightBatches: [CodeHighlightBatch]
     let prewarmsLayout: Bool
 
     @State private var fontSize = PlatformCodeTextView.defaultFontSize
@@ -32,6 +35,9 @@ struct CodeTextView: View {
                 plainTextColor: plainTextColor,
                 fontSize: fontSize,
                 lineWrapping: lineWrapping,
+                highlightLanguage: highlightLanguage,
+                highlightAppearance: highlightAppearance,
+                highlightBatches: highlightBatches,
                 prewarmsLayout: prewarmsLayout
             )
         )
@@ -96,10 +102,13 @@ public struct CodeViewerCommands: Commands {
 
 private struct CodeTextRenderRequest {
     let documentID: String
-    let text: AttributedString
+    let text: String
     let plainTextColor: Color
     let fontSize: CGFloat
     let lineWrapping: CodeLineWrapping
+    let highlightLanguage: CodeLanguage
+    let highlightAppearance: CodeHighlightAppearance
+    let highlightBatches: [CodeHighlightBatch]
     let prewarmsLayout: Bool
 }
 
@@ -109,37 +118,46 @@ struct CodeTextDocumentChange: Equatable {
 
 struct CodeTextDocumentState {
     private(set) var documentID: String?
-    private(set) var content: AttributedString?
+    private(set) var content: String?
     private(set) var plainTextColor: Color?
     private(set) var fontSize: CGFloat?
+    private(set) var highlightLanguage: CodeLanguage?
+    private(set) var highlightAppearance: CodeHighlightAppearance?
     private(set) var lineIndex = CodeLineIndex(text: "")
 
     func change(
         documentID: String,
-        text: AttributedString,
+        text: String,
         plainTextColor: Color,
-        fontSize: CGFloat
+        fontSize: CGFloat,
+        highlightLanguage: CodeLanguage,
+        highlightAppearance: CodeHighlightAppearance
     ) -> CodeTextDocumentChange? {
         guard self.documentID != documentID
                 || content != text
                 || self.plainTextColor != plainTextColor
                 || self.fontSize != fontSize
+                || self.highlightLanguage != highlightLanguage
+                || self.highlightAppearance != highlightAppearance
         else { return nil }
         return CodeTextDocumentChange(isNewDocument: self.documentID != documentID)
     }
 
     mutating func apply(
         documentID: String,
-        text: AttributedString,
+        text: String,
         plainTextColor: Color,
         fontSize: CGFloat,
-        plainText: String
+        highlightLanguage: CodeLanguage,
+        highlightAppearance: CodeHighlightAppearance
     ) {
         self.documentID = documentID
         content = text
         self.plainTextColor = plainTextColor
         self.fontSize = fontSize
-        lineIndex = CodeLineIndex(text: plainText)
+        self.highlightLanguage = highlightLanguage
+        self.highlightAppearance = highlightAppearance
+        lineIndex = CodeLineIndex(text: text)
     }
 }
 
@@ -265,11 +283,11 @@ private enum CodeTextStyle {
     }
 
     static func attributedText(
-        _ text: AttributedString,
+        _ text: String,
         font: CodePlatformFont,
         plainTextColor: Color
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString(attributedString: NSAttributedString(text))
+    ) -> NSMutableAttributedString {
+        let result = NSMutableAttributedString(string: text)
         result.addAttribute(
             .font,
             value: font,
@@ -320,7 +338,9 @@ private extension CodeTextDocumentState {
             documentID: request.documentID,
             text: request.text,
             plainTextColor: request.plainTextColor,
-            fontSize: request.fontSize
+            fontSize: request.fontSize,
+            highlightLanguage: request.highlightLanguage,
+            highlightAppearance: request.highlightAppearance
         ) else { return nil }
 
         let font = CodeTextStyle.font(ofSize: request.fontSize)
@@ -329,18 +349,69 @@ private extension CodeTextDocumentState {
             font: font,
             plainTextColor: request.plainTextColor
         )
+        CodeNativeHighlighting.apply(
+            request.highlightBatches,
+            appearance: request.highlightAppearance,
+            to: attributedText
+        )
         apply(
             documentID: request.documentID,
             text: request.text,
             plainTextColor: request.plainTextColor,
             fontSize: request.fontSize,
-            plainText: attributedText.string
+            highlightLanguage: request.highlightLanguage,
+            highlightAppearance: request.highlightAppearance
         )
         return CodeTextPreparedUpdate(
             change: change,
             attributedText: attributedText,
             font: font,
             lineCount: lineIndex.count
+        )
+    }
+}
+
+enum CodeNativeHighlighting {
+    static func apply(
+        _ batches: [CodeHighlightBatch],
+        appearance: CodeHighlightAppearance,
+        to text: NSMutableAttributedString
+    ) {
+        for batch in batches {
+            apply(batch, appearance: appearance, to: text)
+        }
+    }
+
+    static func apply(
+        _ batch: CodeHighlightBatch,
+        appearance: CodeHighlightAppearance,
+        to text: NSMutableAttributedString
+    ) {
+        let textLength = text.length
+        for span in batch.spans {
+            guard span.range.location >= 0,
+                  span.range.length > 0,
+                  NSMaxRange(span.range) <= textLength
+            else { continue }
+
+            text.addAttribute(
+                .foregroundColor,
+                value: color(for: span.token, appearance: appearance),
+                range: span.range
+            )
+        }
+    }
+
+    private static func color(
+        for token: CodeHighlightToken,
+        appearance: CodeHighlightAppearance
+    ) -> CodePlatformColor {
+        let value = token.colorValue(for: appearance)
+        return CodePlatformColor(
+            red: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
         )
     }
 }
@@ -368,6 +439,7 @@ private final class MacCodeTextContainer: NSView {
     private let textView: NSTextView
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
+    private var lastAppliedHighlightSequence = -1
     private var lineWrapping: CodeLineWrapping?
 
     override var isFlipped: Bool { true }
@@ -439,6 +511,7 @@ private final class MacCodeTextContainer: NSView {
         updateLineWrapping(request.lineWrapping)
 
         guard let update = documentState.prepareUpdate(for: request) else {
+            applyNewHighlightBatches(from: request)
             scheduleGutterUpdate()
             return
         }
@@ -447,6 +520,7 @@ private final class MacCodeTextContainer: NSView {
         let selectedRanges = textView.selectedRanges
 
         textView.textStorage?.setAttributedString(update.attributedText)
+        lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
         gutterView.updateMetrics(
             lineCount: update.lineCount,
             font: update.font
@@ -463,6 +537,24 @@ private final class MacCodeTextContainer: NSView {
         scrollView.contentView.scroll(to: destination)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         scheduleGutterUpdate()
+    }
+
+    private func applyNewHighlightBatches(from request: CodeTextRenderRequest) {
+        guard let textStorage = textView.textStorage else { return }
+        let batches = request.highlightBatches.filter {
+            $0.sequence > lastAppliedHighlightSequence
+        }
+        guard !batches.isEmpty else { return }
+
+        textStorage.beginEditing()
+        CodeNativeHighlighting.apply(
+            batches,
+            appearance: request.highlightAppearance,
+            to: textStorage
+        )
+        textStorage.endEditing()
+        lastAppliedHighlightSequence = batches.last?.sequence
+            ?? lastAppliedHighlightSequence
     }
 
     private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {
@@ -570,8 +662,9 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     private let textView = UITextView(usingTextLayoutManager: true)
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
+    private var lastAppliedHighlightSequence = -1
     private var layoutPrewarmingTask: Task<Void, Never>?
-    private var prewarmedContent: AttributedString?
+    private var prewarmedContent: String?
     private var lineWrapping: CodeLineWrapping?
 
     override init(frame: CGRect) {
@@ -617,6 +710,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         let needsLayoutPrewarming = request.prewarmsLayout
             && (prewarmedContent != request.text || fontSizeChanged)
         guard let update = documentState.prepareUpdate(for: request) else {
+            applyNewHighlightBatches(from: request)
             if needsLayoutPrewarming {
                 scheduleLayoutPrewarming(
                     for: request.text,
@@ -633,6 +727,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         let selectedRange = textView.selectedRange
 
         textView.textStorage.setAttributedString(update.attributedText)
+        lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
         gutterView.updateMetrics(
             lineCount: update.lineCount,
             font: update.font
@@ -654,6 +749,23 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
                 fontSize: request.fontSize
             )
         }
+    }
+
+    private func applyNewHighlightBatches(from request: CodeTextRenderRequest) {
+        let batches = request.highlightBatches.filter {
+            $0.sequence > lastAppliedHighlightSequence
+        }
+        guard !batches.isEmpty else { return }
+
+        textView.textStorage.beginEditing()
+        CodeNativeHighlighting.apply(
+            batches,
+            appearance: request.highlightAppearance,
+            to: textView.textStorage
+        )
+        textView.textStorage.endEditing()
+        lastAppliedHighlightSequence = batches.last?.sequence
+            ?? lastAppliedHighlightSequence
     }
 
     private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {
@@ -700,7 +812,7 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     }
 
     private func scheduleLayoutPrewarming(
-        for text: AttributedString,
+        for text: String,
         fontSize: CGFloat
     ) {
         guard prewarmedContent != text else { return }

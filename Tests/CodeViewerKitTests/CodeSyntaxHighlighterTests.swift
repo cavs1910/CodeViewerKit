@@ -1,32 +1,46 @@
-import Foundation
 import XCTest
 @testable import CodeViewerKit
 
-#if os(macOS)
-import AppKit
-#else
-import UIKit
-#endif
-
 final class CodeSyntaxHighlighterTests: XCTestCase {
-    func testUnregisteredLanguageReturnsPlainText() async throws {
+    func testUnregisteredLanguageProducesNoHighlightBatches() async {
         let source = "some custom syntax"
         let highlighter = CodeSyntaxHighlighter(grammars: [])
-        let highlighted = await highlighter.attributedText(
+        let stream = await highlighter.highlightedBatches(
             source,
-            language: "language-created-tomorrow",
-            appearance: .dark
+            language: "language-created-tomorrow"
         )
-        let result = try XCTUnwrap(highlighted)
-        let nativeText = NSAttributedString(result)
 
-        XCTAssertEqual(nativeText.string, source)
-        XCTAssertNil(
-            nativeText.attribute(
-                .foregroundColor,
-                at: 0,
-                effectiveRange: nil
-            )
+        var batches: [CodeHighlightBatch] = []
+        for await batch in stream {
+            batches.append(batch)
+        }
+
+        XCTAssertTrue(batches.isEmpty)
+    }
+
+    func testChunkRangesCoverTheDocumentWithoutGaps() {
+        let source = "first\nsecond\nthird\nfourth"
+        let ranges = CodeHighlightChunker.ranges(
+            in: source,
+            targetUTF16Length: 7
+        )
+
+        XCTAssertEqual(ranges.first?.location, 0)
+        XCTAssertEqual(ranges.last.map(NSMaxRange), (source as NSString).length)
+        for pair in zip(ranges, ranges.dropFirst()) {
+            XCTAssertEqual(NSMaxRange(pair.0), pair.1.location)
+        }
+    }
+
+    func testHighlightTokenPreservesPaletteCategories() {
+        XCTAssertEqual(
+            CodeHighlightToken(nameComponents: ["variable", "builtin"]),
+            .builtinVariable
+        )
+        XCTAssertNil(CodeHighlightToken(nameComponents: ["variable"]))
+        XCTAssertEqual(
+            CodeHighlightToken.string.colorValue(for: .dark),
+            0xFC6A_5D
         )
     }
 }

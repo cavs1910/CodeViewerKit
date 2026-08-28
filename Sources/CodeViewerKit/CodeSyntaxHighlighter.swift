@@ -1,19 +1,6 @@
 import Foundation
 import SwiftTreeSitter
 
-#if os(macOS)
-import AppKit
-private typealias CodeHighlightPlatformColor = NSColor
-#else
-import UIKit
-private typealias CodeHighlightPlatformColor = UIColor
-#endif
-
-enum CodeHighlightAppearance: Hashable, Sendable {
-    case light
-    case dark
-}
-
 actor CodeSyntaxHighlighter {
     private let specifications: [String: TreeSitterLanguageSpecification]
     private let detectedSpecifications: [TreeSitterLanguageSpecification]
@@ -43,11 +30,10 @@ actor CodeSyntaxHighlighter {
         self.detectedSpecifications = detectedSpecifications
     }
 
-    func attributedText(
+    func highlightedBatches(
         _ sourceCode: String,
-        language: CodeLanguage,
-        appearance: CodeHighlightAppearance
-    ) -> AttributedString? {
+        language: CodeLanguage
+    ) -> AsyncStream<CodeHighlightBatch> {
         let specification: TreeSitterLanguageSpecification?
         if let identifier = language.identifier {
             specification = specifications[Self.normalized(identifier)]
@@ -57,15 +43,24 @@ actor CodeSyntaxHighlighter {
             }
         }
         guard let specification else {
-            return AttributedString(sourceCode)
+            return Self.finishedStream()
         }
         guard let highlighter = preparedHighlighter(for: specification) else {
-            return nil
+            return Self.finishedStream()
         }
-        return try? highlighter.attributedText(
-            sourceCode,
-            appearance: appearance
-        )
+
+        return AsyncStream { continuation in
+            let producer = Task {
+                defer { continuation.finish() }
+                try? await highlighter.emitBatches(
+                    for: sourceCode,
+                    continuation: continuation
+                )
+            }
+            continuation.onTermination = { _ in
+                producer.cancel()
+            }
+        }
     }
 
     private func preparedHighlighter(
@@ -93,9 +88,13 @@ actor CodeSyntaxHighlighter {
     private static func normalized(_ identifier: String) -> String {
         identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
+
+    private static func finishedStream() -> AsyncStream<CodeHighlightBatch> {
+        AsyncStream { $0.finish() }
+    }
 }
 
-final class TreeSitterCodeHighlighter {
+actor TreeSitterCodeHighlighter {
     private let parser: Parser
     private let highlightQuery: SwiftTreeSitter.Query
 
@@ -113,42 +112,47 @@ final class TreeSitterCodeHighlighter {
         )
     }
 
-    func attributedText(
-        _ sourceCode: String,
-        appearance: CodeHighlightAppearance
-    ) throws -> AttributedString {
+    func emitBatches(
+        for sourceCode: String,
+        continuation: AsyncStream<CodeHighlightBatch>.Continuation
+    ) async throws {
         guard let tree = parser.parse(sourceCode) else {
             throw TreeSitterHighlightError.parsingFailed
         }
 
-        let highlights = highlightQuery.execute(in: tree)
-            .resolve(with: .init(string: sourceCode))
-            .highlights()
-        let result = NSMutableAttributedString(string: sourceCode)
+        for (sequence, range) in CodeHighlightChunker.ranges(
+            in: sourceCode
+        ).enumerated() {
+            guard !Task.isCancelled else { return }
 
-        for highlight in highlights {
-            guard let color = TreeSitterPalette.color(
-                for: highlight.nameComponents,
-                appearance: appearance
-            ), NSMaxRange(highlight.range) <= result.length else {
-                continue
-            }
-            result.addAttribute(
-                .foregroundColor,
-                value: color,
-                range: highlight.range
+            let cursor = highlightQuery.execute(in: tree)
+            cursor.setRange(range)
+            let spans = cursor
+                .resolve(with: .init(string: sourceCode))
+                .highlights()
+                .compactMap { highlight -> CodeHighlightSpan? in
+                    guard let token = CodeHighlightToken(
+                        nameComponents: highlight.nameComponents
+                    ) else { return nil }
+                    return CodeHighlightSpan(
+                        range: highlight.range,
+                        token: token
+                    )
+                }
+
+            continuation.yield(
+                CodeHighlightBatch(
+                    sequence: sequence,
+                    coveredRange: range,
+                    spans: spans
+                )
             )
+            await Task.yield()
         }
-
-#if os(macOS)
-        return try AttributedString(result, including: \.appKit)
-#else
-        return try AttributedString(result, including: \.uiKit)
-#endif
     }
 }
 
-struct TreeSitterLanguageSpecification {
+struct TreeSitterLanguageSpecification: @unchecked Sendable {
     let identifier: String
     let language: OpaquePointer
     let queryURLs: [URL]
@@ -166,50 +170,4 @@ private extension Array where Element == Data {
 
 private enum TreeSitterHighlightError: Error {
     case parsingFailed
-}
-
-private enum TreeSitterPalette {
-    static func color(
-        for nameComponents: [String],
-        appearance: CodeHighlightAppearance
-    ) -> CodeHighlightPlatformColor? {
-        guard let category = nameComponents.first else { return nil }
-
-        return switch category {
-        case "attribute", "property":
-            color(light: 0x9C2F_AE, dark: 0xD0A8_FF, appearance: appearance)
-        case "boolean", "character", "constant", "number":
-            color(light: 0x272A_D8, dark: 0xD0BF_69, appearance: appearance)
-        case "comment":
-            color(light: 0x5D6C_79, dark: 0x7F8C_98, appearance: appearance)
-        case "constructor", "function", "method":
-            color(light: 0x326D_74, dark: 0x67B7_A4, appearance: appearance)
-        case "keyword", "label", "operator", "punctuation", "tag", "text":
-            color(light: 0xAD3D_A4, dark: 0xFF7A_B2, appearance: appearance)
-        case "string":
-            color(light: 0xD12F_1B, dark: 0xFC6A_5D, appearance: appearance)
-        case "type":
-            color(light: 0x703D_AA, dark: 0xDABA_FF, appearance: appearance)
-        case "variable":
-            nameComponents.contains("builtin")
-                ? color(light: 0x703D_AA, dark: 0xDABA_FF, appearance: appearance)
-                : nil
-        default:
-            nil
-        }
-    }
-
-    private static func color(
-        light: UInt32,
-        dark: UInt32,
-        appearance: CodeHighlightAppearance
-    ) -> CodeHighlightPlatformColor {
-        let value = appearance == .dark ? dark : light
-        return CodeHighlightPlatformColor(
-            red: CGFloat((value >> 16) & 0xFF) / 255,
-            green: CGFloat((value >> 8) & 0xFF) / 255,
-            blue: CGFloat(value & 0xFF) / 255,
-            alpha: 1
-        )
-    }
 }

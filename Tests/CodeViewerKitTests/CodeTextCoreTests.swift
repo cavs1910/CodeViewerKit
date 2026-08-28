@@ -9,14 +9,16 @@ import AppKit
 final class CodeTextCoreTests: XCTestCase {
     func testDocumentStateClassifiesUpdatesAndNewDocuments() throws {
         var state = CodeTextDocumentState()
-        let text = AttributedString("first\nsecond")
+        let text = "first\nsecond"
 
         let initialChange = try XCTUnwrap(
             state.change(
                 documentID: "first",
                 text: text,
                 plainTextColor: .white,
-                fontSize: 12
+                fontSize: 12,
+                highlightLanguage: "swift",
+                highlightAppearance: .light
             )
         )
         XCTAssertTrue(initialChange.isNewDocument)
@@ -26,14 +28,17 @@ final class CodeTextCoreTests: XCTestCase {
             text: text,
             plainTextColor: .white,
             fontSize: 12,
-            plainText: "first\nsecond"
+            highlightLanguage: "swift",
+            highlightAppearance: .light
         )
         XCTAssertNil(
             state.change(
                 documentID: "first",
                 text: text,
                 plainTextColor: .white,
-                fontSize: 12
+                fontSize: 12,
+                highlightLanguage: "swift",
+                highlightAppearance: .light
             )
         )
         XCTAssertFalse(
@@ -42,7 +47,9 @@ final class CodeTextCoreTests: XCTestCase {
                     documentID: "first",
                     text: text,
                     plainTextColor: .white,
-                    fontSize: 13
+                    fontSize: 13,
+                    highlightLanguage: "swift",
+                    highlightAppearance: .light
                 )
             ).isNewDocument
         )
@@ -52,7 +59,9 @@ final class CodeTextCoreTests: XCTestCase {
                     documentID: "first",
                     text: text,
                     plainTextColor: .black,
-                    fontSize: 12
+                    fontSize: 12,
+                    highlightLanguage: "swift",
+                    highlightAppearance: .light
                 )
             ).isNewDocument
         )
@@ -62,7 +71,9 @@ final class CodeTextCoreTests: XCTestCase {
                     documentID: "second",
                     text: text,
                     plainTextColor: .white,
-                    fontSize: 12
+                    fontSize: 12,
+                    highlightLanguage: "swift",
+                    highlightAppearance: .light
                 )
             ).isNewDocument
         )
@@ -73,10 +84,11 @@ final class CodeTextCoreTests: XCTestCase {
 
         state.apply(
             documentID: "sample",
-            text: AttributedString("first\nsecond\n"),
+            text: "first\nsecond\n",
             plainTextColor: .white,
             fontSize: 12,
-            plainText: "first\nsecond\n"
+            highlightLanguage: "swift",
+            highlightAppearance: .light
         )
 
         XCTAssertEqual(state.lineIndex.count, 3)
@@ -137,6 +149,32 @@ final class CodeTextCoreTests: XCTestCase {
                 effectiveRange: nil
             ) as? NSColor,
             .systemRed
+        )
+        #endif
+    }
+
+    func testNativeHighlightingAppliesOnlyThePublishedBatch() {
+        #if os(macOS)
+        let text = NSMutableAttributedString(string: "let value")
+        let batch = CodeHighlightBatch(
+            sequence: 0,
+            coveredRange: NSRange(location: 0, length: 3),
+            spans: [
+                CodeHighlightSpan(
+                    range: NSRange(location: 0, length: 3),
+                    token: .keyword
+                )
+            ]
+        )
+
+        CodeNativeHighlighting.apply(batch, appearance: .light, to: text)
+
+        XCTAssertEqual(text.string, "let value")
+        XCTAssertNotNil(
+            text.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+        )
+        XCTAssertNil(
+            text.attribute(.foregroundColor, at: 4, effectiveRange: nil)
         )
         #endif
     }

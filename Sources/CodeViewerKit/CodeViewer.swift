@@ -58,25 +58,25 @@ public struct CodeViewer: View {
     }
 
     public var body: some View {
+        let snapshot = highlightStore.snapshot(
+            documentID: documentID,
+            sourceCode: sourceCode,
+            language: language,
+            colorScheme: colorScheme
+        )
+
         CodeTextView(
             documentID: documentID,
-            text: highlightStore.displayedCode(
-                documentID: documentID,
-                sourceCode: sourceCode,
-                language: language,
-                colorScheme: colorScheme
-            ),
+            text: sourceCode,
             plainTextColor: CodePlainTextStyle.resolve(
                 configuredColor: plainTextColor,
                 colorScheme: colorScheme
             ),
             lineWrapping: lineWrapping,
-            prewarmsLayout: highlightStore.isPrepared(
-                documentID: documentID,
-                sourceCode: sourceCode,
-                language: language,
-                colorScheme: colorScheme
-            )
+            highlightLanguage: language,
+            highlightAppearance: colorScheme == .dark ? .dark : .light,
+            highlightBatches: snapshot.batches,
+            prewarmsLayout: snapshot.isPrepared
         )
         .task(id: highlightRequest) {
             await highlightStore.prepare(
