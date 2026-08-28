@@ -254,18 +254,22 @@ private struct CodeGutterRenderer {
 
 @MainActor
 private final class CodeGutterUpdateCoordinator {
-    private var updateScheduled = false
+    private var scheduledTask: Task<Void, Never>?
     private var isUpdating = false
 
     func schedule(_ update: @escaping @MainActor () -> Void) {
-        guard !updateScheduled else { return }
-        updateScheduled = true
+        guard scheduledTask == nil else { return }
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            updateScheduled = false
+        scheduledTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            scheduledTask = nil
             update()
         }
+    }
+
+    func cancelScheduledUpdate() {
+        scheduledTask?.cancel()
+        scheduledTask = nil
     }
 
     func perform(_ update: () -> Void) {
@@ -273,6 +277,33 @@ private final class CodeGutterUpdateCoordinator {
         isUpdating = true
         defer { isUpdating = false }
         update()
+    }
+}
+
+enum CodeLiveScrollWork: Hashable {
+    case gutter
+    case highlights
+    case layoutPrewarming
+}
+
+struct CodeLiveScrollWorkState {
+    private(set) var isActive = false
+    private var deferredWork: Set<CodeLiveScrollWork> = []
+
+    mutating func begin() {
+        isActive = true
+    }
+
+    mutating func shouldPerform(_ work: CodeLiveScrollWork) -> Bool {
+        guard isActive else { return true }
+        deferredWork.insert(work)
+        return false
+    }
+
+    mutating func finish() -> Set<CodeLiveScrollWork> {
+        isActive = false
+        defer { deferredWork.removeAll(keepingCapacity: true) }
+        return deferredWork
     }
 }
 
@@ -440,6 +471,10 @@ private final class MacCodeTextContainer: NSView {
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
+    private var liveScrollState = CodeLiveScrollWorkState()
+    private var liveScrollSettlingTask: Task<Void, Never>?
+    private var isNativeLiveScrollActive = false
+    private var deferredHighlightRequest: CodeTextRenderRequest?
     private var lineWrapping: CodeLineWrapping?
 
     override var isFlipped: Bool { true }
@@ -484,6 +519,24 @@ private final class MacCodeTextContainer: NSView {
             name: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewWillStartLiveScroll),
+            name: NSScrollView.willStartLiveScrollNotification,
+            object: scrollView
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewDidLiveScroll),
+            name: NSScrollView.didLiveScrollNotification,
+            object: scrollView
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewDidEndLiveScroll),
+            name: NSScrollView.didEndLiveScrollNotification,
+            object: scrollView
+        )
     }
 
     @available(*, unavailable)
@@ -492,6 +545,7 @@ private final class MacCodeTextContainer: NSView {
     }
 
     deinit {
+        liveScrollSettlingTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -511,7 +565,11 @@ private final class MacCodeTextContainer: NSView {
         updateLineWrapping(request.lineWrapping)
 
         guard let update = documentState.prepareUpdate(for: request) else {
-            applyNewHighlightBatches(from: request)
+            if liveScrollState.shouldPerform(.highlights) {
+                applyNewHighlightBatches(from: request)
+            } else {
+                deferredHighlightRequest = request
+            }
             scheduleGutterUpdate()
             return
         }
@@ -521,6 +579,7 @@ private final class MacCodeTextContainer: NSView {
 
         textView.textStorage?.setAttributedString(update.attributedText)
         lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
+        deferredHighlightRequest = nil
         gutterView.updateMetrics(
             lineCount: update.lineCount,
             font: update.font
@@ -587,7 +646,60 @@ private final class MacCodeTextContainer: NSView {
         scheduleGutterUpdate()
     }
 
+    @objc private func scrollViewWillStartLiveScroll(_ notification: Notification) {
+        isNativeLiveScrollActive = true
+        beginLiveScroll()
+    }
+
+    @objc private func scrollViewDidLiveScroll(_ notification: Notification) {
+        beginLiveScroll()
+        if !isNativeLiveScrollActive {
+            scheduleLiveScrollFinish()
+        }
+    }
+
+    @objc private func scrollViewDidEndLiveScroll(_ notification: Notification) {
+        isNativeLiveScrollActive = false
+        scheduleLiveScrollFinish()
+    }
+
+    private func beginLiveScroll() {
+        liveScrollSettlingTask?.cancel()
+        liveScrollSettlingTask = nil
+        guard !liveScrollState.isActive else { return }
+
+        liveScrollState.begin()
+        _ = liveScrollState.shouldPerform(.gutter)
+        gutterUpdates.cancelScheduledUpdate()
+    }
+
+    private func scheduleLiveScrollFinish() {
+        liveScrollSettlingTask?.cancel()
+        liveScrollSettlingTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self, !Task.isCancelled else { return }
+            liveScrollSettlingTask = nil
+            finishLiveScroll()
+        }
+    }
+
+    private func finishLiveScroll() {
+        liveScrollSettlingTask?.cancel()
+        liveScrollSettlingTask = nil
+        let deferredWork = liveScrollState.finish()
+
+        if deferredWork.contains(.highlights),
+           let deferredHighlightRequest {
+            self.deferredHighlightRequest = nil
+            applyNewHighlightBatches(from: deferredHighlightRequest)
+        }
+        if deferredWork.contains(.gutter) {
+            scheduleGutterUpdate()
+        }
+    }
+
     private func scheduleGutterUpdate() {
+        guard liveScrollState.shouldPerform(.gutter) else { return }
         gutterUpdates.schedule { [weak self] in
             self?.updateGutter()
         }
@@ -663,7 +775,11 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
+    private var liveScrollState = CodeLiveScrollWorkState()
+    private var deferredHighlightRequest: CodeTextRenderRequest?
+    private var latestRequest: CodeTextRenderRequest?
     private var layoutPrewarmingTask: Task<Void, Never>?
+    private var prewarmingContent: String?
     private var prewarmedContent: String?
     private var lineWrapping: CodeLineWrapping?
 
@@ -704,13 +820,18 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     }
 
     func update(_ request: CodeTextRenderRequest) {
+        latestRequest = request
         updateLineWrapping(request.lineWrapping)
 
         let fontSizeChanged = documentState.fontSize != request.fontSize
         let needsLayoutPrewarming = request.prewarmsLayout
             && (prewarmedContent != request.text || fontSizeChanged)
         guard let update = documentState.prepareUpdate(for: request) else {
-            applyNewHighlightBatches(from: request)
+            if liveScrollState.shouldPerform(.highlights) {
+                applyNewHighlightBatches(from: request)
+            } else {
+                deferredHighlightRequest = request
+            }
             if needsLayoutPrewarming {
                 scheduleLayoutPrewarming(
                     for: request.text,
@@ -722,12 +843,15 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         }
 
         layoutPrewarmingTask?.cancel()
+        layoutPrewarmingTask = nil
+        prewarmingContent = nil
         prewarmedContent = nil
         let contentOffset = textView.contentOffset
         let selectedRange = textView.selectedRange
 
         textView.textStorage.setAttributedString(update.attributedText)
         lastAppliedHighlightSequence = request.highlightBatches.last?.sequence ?? -1
+        deferredHighlightRequest = nil
         gutterView.updateMetrics(
             lineCount: update.lineCount,
             font: update.font
@@ -789,7 +913,61 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         scheduleGutterUpdate()
     }
 
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        beginLiveScroll()
+    }
+
+    func scrollViewDidEndDragging(
+        _ scrollView: UIScrollView,
+        willDecelerate decelerate: Bool
+    ) {
+        if !decelerate {
+            finishLiveScroll()
+        }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        finishLiveScroll()
+    }
+
+    private func beginLiveScroll() {
+        guard !liveScrollState.isActive else { return }
+
+        liveScrollState.begin()
+        _ = liveScrollState.shouldPerform(.gutter)
+        gutterUpdates.cancelScheduledUpdate()
+
+        if layoutPrewarmingTask != nil {
+            layoutPrewarmingTask?.cancel()
+            layoutPrewarmingTask = nil
+            prewarmingContent = nil
+            _ = liveScrollState.shouldPerform(.layoutPrewarming)
+        }
+    }
+
+    private func finishLiveScroll() {
+        let deferredWork = liveScrollState.finish()
+
+        if deferredWork.contains(.highlights),
+           let deferredHighlightRequest {
+            self.deferredHighlightRequest = nil
+            applyNewHighlightBatches(from: deferredHighlightRequest)
+        }
+        if deferredWork.contains(.gutter) {
+            scheduleGutterUpdate()
+        }
+        if deferredWork.contains(.layoutPrewarming),
+           let latestRequest,
+           latestRequest.prewarmsLayout {
+            scheduleLayoutPrewarming(
+                for: latestRequest.text,
+                fontSize: latestRequest.fontSize
+            )
+        }
+    }
+
     private func scheduleGutterUpdate() {
+        guard liveScrollState.shouldPerform(.gutter) else { return }
         gutterUpdates.schedule { [weak self] in
             self?.updateGutter()
         }
@@ -815,14 +993,19 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         for text: String,
         fontSize: CGFloat
     ) {
-        guard prewarmedContent != text else { return }
+        guard prewarmedContent != text, prewarmingContent != text else { return }
+        guard liveScrollState.shouldPerform(.layoutPrewarming) else { return }
 
         layoutPrewarmingTask?.cancel()
-        prewarmedContent = text
+        prewarmingContent = text
         layoutPrewarmingTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
             await prewarmTextLayout(fontSize: fontSize)
+            guard !Task.isCancelled else { return }
+            prewarmedContent = text
+            prewarmingContent = nil
+            layoutPrewarmingTask = nil
         }
     }
 

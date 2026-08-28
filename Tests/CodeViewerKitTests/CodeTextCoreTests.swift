@@ -7,6 +7,31 @@ import AppKit
 #endif
 
 final class CodeTextCoreTests: XCTestCase {
+    func testLiveScrollWorkRunsImmediatelyWhileIdle() {
+        var state = CodeLiveScrollWorkState()
+
+        XCTAssertTrue(state.shouldPerform(.gutter))
+        XCTAssertTrue(state.shouldPerform(.highlights))
+        XCTAssertTrue(state.shouldPerform(.layoutPrewarming))
+    }
+
+    func testLiveScrollWorkIsCoalescedUntilScrollingFinishes() {
+        var state = CodeLiveScrollWorkState()
+
+        state.begin()
+
+        XCTAssertFalse(state.shouldPerform(.gutter))
+        XCTAssertFalse(state.shouldPerform(.gutter))
+        XCTAssertFalse(state.shouldPerform(.highlights))
+        XCTAssertFalse(state.shouldPerform(.layoutPrewarming))
+        XCTAssertEqual(
+            state.finish(),
+            Set([.gutter, .highlights, .layoutPrewarming])
+        )
+        XCTAssertTrue(state.shouldPerform(.gutter))
+        XCTAssertTrue(state.finish().isEmpty)
+    }
+
     func testDocumentStateClassifiesUpdatesAndNewDocuments() throws {
         var state = CodeTextDocumentState()
         let text = "first\nsecond"
