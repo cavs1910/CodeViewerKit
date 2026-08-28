@@ -2,7 +2,7 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
-## Unreleased
+## 0.6.7 - 2026-08-28
 
 - publish Tree-sitter highlighting progressively in document-order batches;
 - keep the native text and scroll position stable while each new batch applies;
