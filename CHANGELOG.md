@@ -6,8 +6,10 @@ All notable changes to CodeViewerKit are documented in this file.
 
 - publish Tree-sitter highlighting progressively in document-order batches;
 - keep the native text and scroll position stable while each new batch applies;
-- use noncontiguous TextKit layout on macOS so distant scrollbar jumps do not
-  synchronously lay out the intervening contents.
+- use noncontiguous TextKit layout on macOS, iOS, and iPadOS so distant scroll
+  jumps do not synchronously lay out the intervening contents;
+- remove whole-document layout prewarming on iOS and iPadOS so it cannot
+  compete with an active scroll.
 
 ## 0.6.6 - 2026-08-28
 

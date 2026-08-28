@@ -23,7 +23,6 @@ struct CodeTextView: View {
     let highlightLanguage: CodeLanguage
     let highlightAppearance: CodeHighlightAppearance
     let highlightBatches: [CodeHighlightBatch]
-    let prewarmsLayout: Bool
 
     @State private var fontSize = PlatformCodeTextView.defaultFontSize
 
@@ -37,8 +36,7 @@ struct CodeTextView: View {
                 lineWrapping: lineWrapping,
                 highlightLanguage: highlightLanguage,
                 highlightAppearance: highlightAppearance,
-                highlightBatches: highlightBatches,
-                prewarmsLayout: prewarmsLayout
+                highlightBatches: highlightBatches
             )
         )
         .focusedSceneValue(\.codeTextFontSize, $fontSize)
@@ -109,7 +107,6 @@ private struct CodeTextRenderRequest {
     let highlightLanguage: CodeLanguage
     let highlightAppearance: CodeHighlightAppearance
     let highlightBatches: [CodeHighlightBatch]
-    let prewarmsLayout: Bool
 }
 
 struct CodeTextDocumentChange: Equatable {
@@ -657,6 +654,19 @@ private final class MacCodeGutterView: NSView {
 
 #else
 
+@MainActor
+enum CodeMobileTextLayout {
+    static func makeTextView() -> UITextView {
+        let textView = UITextView(usingTextLayoutManager: false)
+        let layoutManager = textView.layoutManager
+
+        // Keep layout sparse so fast jumps only typeset the destination
+        // viewport instead of every line between the old and new positions.
+        layoutManager.allowsNonContiguousLayout = true
+        return textView
+    }
+}
+
 private struct PlatformCodeTextView: UIViewRepresentable {
     static let defaultFontSize = UIFont.preferredFont(forTextStyle: .footnote).pointSize
 
@@ -674,12 +684,10 @@ private struct PlatformCodeTextView: UIViewRepresentable {
 @MainActor
 private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     private let gutterView = MobileCodeGutterView()
-    private let textView = UITextView(usingTextLayoutManager: true)
+    private let textView = CodeMobileTextLayout.makeTextView()
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lastAppliedHighlightSequence = -1
-    private var layoutPrewarmingTask: Task<Void, Never>?
-    private var prewarmedContent: String?
     private var lineWrapping: CodeLineWrapping?
 
     override init(frame: CGRect) {
@@ -690,11 +698,6 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
         textView.isSelectable = true
         textView.allowsEditingTextAttributes = false
         textView.isScrollEnabled = true
-        let layoutQueue = OperationQueue()
-        layoutQueue.name = "CodeTextView.TextLayout"
-        layoutQueue.maxConcurrentOperationCount = 1
-        layoutQueue.qualityOfService = .utility
-        textView.textLayoutManager?.layoutQueue = layoutQueue
         textView.delegate = self
 
         addSubview(gutterView)
@@ -721,23 +724,12 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
     func update(_ request: CodeTextRenderRequest) {
         updateLineWrapping(request.lineWrapping)
 
-        let fontSizeChanged = documentState.fontSize != request.fontSize
-        let needsLayoutPrewarming = request.prewarmsLayout
-            && (prewarmedContent != request.text || fontSizeChanged)
         guard let update = documentState.prepareUpdate(for: request) else {
             applyNewHighlightBatches(from: request)
-            if needsLayoutPrewarming {
-                scheduleLayoutPrewarming(
-                    for: request.text,
-                    fontSize: request.fontSize
-                )
-            }
             scheduleGutterUpdate()
             return
         }
 
-        layoutPrewarmingTask?.cancel()
-        prewarmedContent = nil
         let contentOffset = textView.contentOffset
         let selectedRange = textView.selectedRange
 
@@ -758,12 +750,6 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
             animated: false
         )
         scheduleGutterUpdate()
-        if request.prewarmsLayout {
-            scheduleLayoutPrewarming(
-                for: request.text,
-                fontSize: request.fontSize
-            )
-        }
     }
 
     private func applyNewHighlightBatches(from request: CodeTextRenderRequest) {
@@ -812,56 +798,18 @@ private final class MobileCodeTextContainer: UIView, UITextViewDelegate {
 
     private func updateGutter() {
         gutterUpdates.perform { [self] in
-            guard let textLayoutManager = textView.textLayoutManager else { return }
-
-            textLayoutManager.textViewportLayoutController.layoutViewport()
             gutterView.updateMarkers(
                 CodeLineLayout.visibleMarkers(
-                    textLayoutManager: textLayoutManager,
+                    layoutManager: textView.layoutManager,
+                    textContainer: textView.textContainer,
                     visibleBounds: textView.bounds,
-                    textContainerTopInset: textView.textContainerInset.top,
+                    textContainerOrigin: CGPoint(
+                        x: textView.textContainerInset.left,
+                        y: textView.textContainerInset.top
+                    ),
                     lineIndex: documentState.lineIndex
                 )
             )
-        }
-    }
-
-    private func scheduleLayoutPrewarming(
-        for text: String,
-        fontSize: CGFloat
-    ) {
-        guard prewarmedContent != text else { return }
-
-        layoutPrewarmingTask?.cancel()
-        prewarmedContent = text
-        layoutPrewarmingTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard let self, !Task.isCancelled else { return }
-            await prewarmTextLayout(fontSize: fontSize)
-        }
-    }
-
-    private func prewarmTextLayout(fontSize: CGFloat) async {
-        guard let textLayoutManager = textView.textLayoutManager else { return }
-
-        let font = CodeTextStyle.font(ofSize: fontSize)
-        let viewportHeight = max(textView.bounds.height, font.lineHeight)
-        let estimatedDocumentHeight = CGFloat(documentState.lineIndex.count) * font.lineHeight
-        let documentHeight = max(textView.contentSize.height, estimatedDocumentHeight)
-        let chunkHeight = viewportHeight * 2
-        var verticalPosition: CGFloat = 0
-
-        while verticalPosition < documentHeight, !Task.isCancelled {
-            textLayoutManager.ensureLayout(
-                for: CGRect(
-                    x: 0,
-                    y: verticalPosition,
-                    width: max(1, textView.bounds.width),
-                    height: min(chunkHeight, documentHeight - verticalPosition)
-                )
-            )
-            verticalPosition += chunkHeight
-            await Task.yield()
         }
     }
 
@@ -959,7 +907,6 @@ struct CodeLineIndex {
 
 @MainActor
 private enum CodeLineLayout {
-#if os(macOS)
     static func visibleMarkers(
         layoutManager: NSLayoutManager,
         textContainer: NSTextContainer,
@@ -1033,119 +980,5 @@ private enum CodeLineLayout {
         }
 
         return markers
-    }
-#endif
-
-    static func visibleMarkers(
-        textLayoutManager: NSTextLayoutManager,
-        visibleBounds: CGRect,
-        textContainerTopInset: CGFloat,
-        lineIndex: CodeLineIndex
-    ) -> [CodeLineMarker] {
-        guard let contentManager = textLayoutManager.textContentManager else {
-            return []
-        }
-
-        if textLayoutManager.documentRange.isEmpty {
-            return [CodeLineMarker(number: 1, verticalPosition: textContainerTopInset)]
-        }
-
-        let layoutBounds = CGRect(
-            x: 0,
-            y: max(0, visibleBounds.minY - textContainerTopInset),
-            width: max(1, visibleBounds.width),
-            height: visibleBounds.height + textContainerTopInset
-        )
-        textLayoutManager.ensureLayout(for: layoutBounds)
-
-        let startFragment = textLayoutManager.textLayoutFragment(
-            for: CGPoint(x: layoutBounds.minX, y: layoutBounds.minY)
-        )
-        let startLocation = startFragment?.rangeInElement.location
-        let documentEndOffset = contentManager.offset(
-            from: contentManager.documentRange.location,
-            to: contentManager.documentRange.endLocation
-        )
-
-        var markers: [CodeLineMarker] = []
-        textLayoutManager.enumerateTextLayoutFragments(
-            from: startLocation,
-            options: [.ensuresLayout, .ensuresExtraLineFragment]
-        ) { fragment in
-            let fragmentFrame = fragment.layoutFragmentFrame
-            if fragmentFrame.minY > layoutBounds.maxY {
-                return false
-            }
-            guard fragmentFrame.maxY >= layoutBounds.minY,
-                  let firstLineFragment = fragment.textLineFragments.first
-            else {
-                return true
-            }
-
-            appendMarker(
-                for: firstLineFragment,
-                in: fragment,
-                fragmentFrame: fragmentFrame,
-                contentManager: contentManager,
-                documentEndOffset: documentEndOffset,
-                visibleBounds: visibleBounds,
-                textContainerTopInset: textContainerTopInset,
-                lineIndex: lineIndex,
-                to: &markers
-            )
-
-            for lineFragment in fragment.textLineFragments.dropFirst()
-            where lineFragment.characterRange.length == 0 {
-                appendMarker(
-                    for: lineFragment,
-                    in: fragment,
-                    fragmentFrame: fragmentFrame,
-                    contentManager: contentManager,
-                    documentEndOffset: documentEndOffset,
-                    visibleBounds: visibleBounds,
-                    textContainerTopInset: textContainerTopInset,
-                    lineIndex: lineIndex,
-                    to: &markers
-                )
-            }
-            return true
-        }
-
-        return markers
-    }
-
-    private static func appendMarker(
-        for lineFragment: NSTextLineFragment,
-        in layoutFragment: NSTextLayoutFragment,
-        fragmentFrame: CGRect,
-        contentManager: NSTextContentManager,
-        documentEndOffset: Int,
-        visibleBounds: CGRect,
-        textContainerTopInset: CGFloat,
-        lineIndex: CodeLineIndex,
-        to markers: inout [CodeLineMarker]
-    ) {
-        let fragmentOffset = contentManager.offset(
-            from: contentManager.documentRange.location,
-            to: layoutFragment.rangeInElement.location
-        )
-        let lineOffset = lineFragment.characterRange.length == 0
-            ? documentEndOffset
-            : fragmentOffset + lineFragment.characterRange.location
-        let verticalPosition = textContainerTopInset
-            + fragmentFrame.minY
-            + lineFragment.typographicBounds.minY
-            - visibleBounds.minY
-
-        guard verticalPosition >= -lineFragment.typographicBounds.height,
-              verticalPosition <= visibleBounds.height
-        else { return }
-
-        markers.append(
-            CodeLineMarker(
-                number: lineIndex.lineNumber(containing: lineOffset),
-                verticalPosition: verticalPosition
-            )
-        )
     }
 }

@@ -73,7 +73,6 @@ struct CodeHighlightBatch: Equatable, Sendable {
 
 struct CodeHighlightSnapshot: Equatable {
     let batches: [CodeHighlightBatch]
-    let isPrepared: Bool
 }
 
 enum CodeHighlightChunker {

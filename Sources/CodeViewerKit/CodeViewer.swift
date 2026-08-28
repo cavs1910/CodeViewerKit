@@ -75,8 +75,7 @@ public struct CodeViewer: View {
             lineWrapping: lineWrapping,
             highlightLanguage: language,
             highlightAppearance: colorScheme == .dark ? .dark : .light,
-            highlightBatches: snapshot.batches,
-            prewarmsLayout: snapshot.isPrepared
+            highlightBatches: snapshot.batches
         )
         .task(id: highlightRequest) {
             await highlightStore.prepare(

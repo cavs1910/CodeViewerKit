@@ -7,8 +7,8 @@
 CodeViewerKit is a minimal, read-only source-code viewer for SwiftUI on iOS,
 iPadOS, and macOS. It uses native TextKit views for selection and scrolling,
 with viewport-based layout instead of rendering a complete document as one
-SwiftUI `Text` value. On macOS, noncontiguous layout keeps distant jumps
-through very large files responsive.
+SwiftUI `Text` value. Noncontiguous layout keeps distant jumps through very
+large files responsive on every supported platform.
 
 ## Features
 
@@ -18,7 +18,7 @@ through very large files responsive.
 - Menlo with a monospaced system fallback;
 - native selection and horizontal and vertical scrolling;
 - Command-Plus and Command-Minus font scaling;
-- background layout prewarming on iOS and iPadOS;
+- sparse, viewport-driven layout on iOS, iPadOS, and macOS;
 - shared highlighting cache for navigation-heavy apps.
 
 ## Requirements

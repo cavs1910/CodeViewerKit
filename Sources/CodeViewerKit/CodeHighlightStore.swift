@@ -51,10 +51,7 @@ public final class CodeHighlightStore {
             colorScheme: colorScheme
         )
         let entry = entries[key]
-        return CodeHighlightSnapshot(
-            batches: entry?.batches ?? [],
-            isPrepared: entry?.isPrepared ?? false
-        )
+        return CodeHighlightSnapshot(batches: entry?.batches ?? [])
     }
 
     /// Returns whether all highlighting batches are cached.
