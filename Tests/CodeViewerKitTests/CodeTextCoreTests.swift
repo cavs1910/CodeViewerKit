@@ -131,6 +131,63 @@ final class CodeTextCoreTests: XCTestCase {
             CGPoint(x: 7, y: 140)
         )
     }
+
+    @MainActor
+    func testMacViewerKeepsFirstLineBelowToolbarWhileWindowResizes() throws {
+        let highlights = CodeHighlightStore(grammars: [])
+        let sourceCode = (1...200)
+            .map {
+                "let line\($0) = \($0) // " + String(repeating: "x", count: 60)
+            }
+            .joined(separator: "\n")
+        let hostingView = NSHostingView(
+            rootView: CodeViewer(
+                documentID: "resize-test",
+                sourceCode: sourceCode,
+                highlightStore: highlights,
+                language: "plain"
+            )
+            .ignoresSafeArea()
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+            styleMask: [.titled, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbar = NSToolbar(identifier: "CodeViewerKit.ResizeTest")
+        window.contentView = hostingView
+
+        hostingView.layoutSubtreeIfNeeded()
+
+        let scrollView = try XCTUnwrap(
+            hostingView.firstDescendant(ofType: NSScrollView.self)
+        )
+        XCTAssertGreaterThan(scrollView.contentInsets.top, 0)
+        XCTAssertFalse(scrollView.automaticallyAdjustsContentInsets)
+        XCTAssertFalse(scrollView.contentView.automaticallyAdjustsContentInsets)
+        XCTAssertEqual(
+            scrollView.contentView.bounds.minY + scrollView.contentInsets.top,
+            0,
+            accuracy: 0.5
+        )
+
+        for size in [
+            NSSize(width: 300, height: 350),
+            NSSize(width: 900, height: 600)
+        ] {
+            window.setContentSize(size)
+            hostingView.layoutSubtreeIfNeeded()
+
+            XCTAssertEqual(
+                scrollView.contentView.bounds.minY + scrollView.contentInsets.top,
+                0,
+                accuracy: 0.5
+            )
+        }
+    }
     #endif
 
     func testPlainTextStyleUsesAnAppearanceAwareDefault() {
@@ -175,3 +232,22 @@ final class CodeTextCoreTests: XCTestCase {
         #endif
     }
 }
+
+#if os(macOS)
+private extension NSView {
+    func firstDescendant<ViewType: NSView>(
+        ofType type: ViewType.Type
+    ) -> ViewType? {
+        if let match = self as? ViewType {
+            return match
+        }
+
+        for subview in subviews {
+            if let match = subview.firstDescendant(ofType: type) {
+                return match
+            }
+        }
+        return nil
+    }
+}
+#endif

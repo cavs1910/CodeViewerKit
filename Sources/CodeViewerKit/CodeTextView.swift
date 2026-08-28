@@ -406,6 +406,10 @@ private final class MacCodeTextContainer: NSView {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .legacy
+        // The scroll view and its clip view adjust insets independently. Own
+        // both values so AppKit cannot move the clip bounds during live resize.
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentView.automaticallyAdjustsContentInsets = false
         scrollView.documentView = textView
 
         textView.drawsBackground = false
@@ -523,8 +527,8 @@ private final class MacCodeTextContainer: NSView {
         )
         guard abs(scrollView.contentInsets.top - topInset) > 0.5 else { return }
 
-        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets.top = topInset
+        scrollView.contentView.contentInsets.top = topInset
     }
 
     private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {

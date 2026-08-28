@@ -2,6 +2,12 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## 0.6.5 - 2026-08-27
+
+- prevent AppKit's clip view from independently changing the toolbar content
+  inset during macOS window resizes, so the first visible code line and gutter
+  number remain below the toolbar;
+
 ## 0.6.4 - 2026-08-27
 
 - expose each registered grammar's canonical identifier and aliases so a
