@@ -347,23 +347,6 @@ private extension CodeTextDocumentState {
 
 #if os(macOS)
 
-enum MacCodeScrollPosition {
-    static func leadingOrigin(contentInsets: NSEdgeInsets) -> CGPoint {
-        CGPoint(x: 0, y: -contentInsets.top)
-    }
-
-    static func preservingContentOffset(
-        _ origin: CGPoint,
-        previousTopInset: CGFloat,
-        newTopInset: CGFloat
-    ) -> CGPoint {
-        CGPoint(
-            x: origin.x,
-            y: origin.y + previousTopInset - newTopInset
-        )
-    }
-}
-
 private struct PlatformCodeTextView: NSViewRepresentable {
     static let defaultFontSize = NSFont.systemFontSize(for: .small)
 
@@ -386,7 +369,6 @@ private final class MacCodeTextContainer: NSView {
     private var documentState = CodeTextDocumentState()
     private let gutterUpdates = CodeGutterUpdateCoordinator()
     private var lineWrapping: CodeLineWrapping?
-    private var needsInitialScrollPosition = false
 
     override var isFlipped: Bool { true }
 
@@ -406,10 +388,6 @@ private final class MacCodeTextContainer: NSView {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .legacy
-        // The scroll view and its clip view adjust insets independently. Own
-        // both values so AppKit cannot move the clip bounds during live resize.
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentView.automaticallyAdjustsContentInsets = false
         scrollView.documentView = textView
 
         textView.drawsBackground = false
@@ -448,38 +426,13 @@ private final class MacCodeTextContainer: NSView {
     override func layout() {
         super.layout()
 
-        let previousVisibleOrigin = scrollView.contentView.bounds.origin
-        let previousTopInset = scrollView.contentInsets.top
         let frames = CodeGutterMetrics.frames(
             in: bounds,
             gutterWidth: gutterView.requiredWidth
         )
         gutterView.frame = frames.gutter
         scrollView.frame = frames.text
-        synchronizeToolbarInset()
-
-        let destination: CGPoint
-        if needsInitialScrollPosition, window != nil {
-            needsInitialScrollPosition = false
-            destination = MacCodeScrollPosition.leadingOrigin(
-                contentInsets: scrollView.contentInsets
-            )
-        } else {
-            destination = MacCodeScrollPosition.preservingContentOffset(
-                previousVisibleOrigin,
-                previousTopInset: previousTopInset,
-                newTopInset: scrollView.contentInsets.top
-            )
-        }
-        scrollView.contentView.scroll(to: destination)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
         scheduleGutterUpdate()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        needsLayout = true
-        layoutSubtreeIfNeeded()
     }
 
     func update(_ request: CodeTextRenderRequest) {
@@ -501,34 +454,15 @@ private final class MacCodeTextContainer: NSView {
 
         if !update.change.isNewDocument {
             textView.selectedRanges = selectedRanges
-        } else {
-            needsInitialScrollPosition = true
-            needsLayout = true
         }
 
         layoutSubtreeIfNeeded()
         let destination = update.change.isNewDocument
-            ? MacCodeScrollPosition.leadingOrigin(
-                contentInsets: scrollView.contentInsets
-            )
+            ? CGPoint.zero
             : visibleOrigin
         scrollView.contentView.scroll(to: destination)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         scheduleGutterUpdate()
-    }
-
-    private func synchronizeToolbarInset() {
-        guard let window else { return }
-
-        let frameInWindow = convert(bounds, to: nil)
-        let topInset = max(
-            0,
-            frameInWindow.maxY - window.contentLayoutRect.maxY
-        )
-        guard abs(scrollView.contentInsets.top - topInset) > 0.5 else { return }
-
-        scrollView.contentInsets.top = topInset
-        scrollView.contentView.contentInsets.top = topInset
     }
 
     private func updateLineWrapping(_ lineWrapping: CodeLineWrapping) {

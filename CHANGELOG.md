@@ -2,6 +2,11 @@
 
 All notable changes to CodeViewerKit are documented in this file.
 
+## Unreleased
+
+- remove toolbar-underlap inset and resize compensation; consumers now keep
+  the code view inside the platform safe area.
+
 ## 0.6.5 - 2026-08-27
 
 - prevent AppKit's clip view from independently changing the toolbar content
